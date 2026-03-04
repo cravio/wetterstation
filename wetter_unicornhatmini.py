@@ -273,34 +273,26 @@ def parse_weather(data):
     }
 
 # ── HAT-Hilfsfunktionen ───────────────────────────────────────────────────────
-def patch_hat_show(hat):
-    """Monkey-Patch: 1ms Pause zwischen linkem und rechtem SPI-Transfer.
-    Nötig auf Pi 5, da der RP1-SPI-Controller sonst die linke Hälfte verliert."""
-    _COLS, _ROWS = 17, 7
-    _CHUNK = 28 * 8
-    _CMD = 0x80
+def patch_hat_spi(hat):
+    """Erzwingt 1ms Mindest-Pause zwischen SPI-Transfers.
+    Nötig auf Pi 5 (RP1), lässt die Original-show()-Logik der Library intakt."""
+    original_xfer = hat.xfer
+    last_xfer = [0.0]
 
-    def patched_show():
-        for i in range(_COLS * _ROWS):
-            ir, ig, ib = hat.lut[i]
-            r, g, b = hat.disp[i]
-            hat.buf[ir] = r
-            hat.buf[ig] = g
-            hat.buf[ib] = b
+    def paced_xfer(device, pin, command):
+        elapsed = time.monotonic() - last_xfer[0]
+        if elapsed < 0.001:
+            time.sleep(0.001 - elapsed)
+        original_xfer(device, pin, command)
+        last_xfer[0] = time.monotonic()
 
-        device, pin, offset = hat.left_matrix
-        hat.xfer(device, pin, [_CMD, 0x00] + hat.buf[offset:offset + _CHUNK])
+    hat.xfer = paced_xfer
 
-        time.sleep(0.001)
-
-        device, pin, offset = hat.right_matrix
-        hat.xfer(device, pin, [_CMD, 0x00] + hat.buf[offset:offset + _CHUNK])
-
-    hat.show = patched_show
-
-def hat_clear(hat):
+def hat_reset(hat):
+    """Kompletter Display-Reset: leeren + SPI stabilisieren."""
     hat.clear()
     hat.show()
+    time.sleep(0.01)
 
 def hat_set_icon(hat, icon, x_offset):
     for row_i, row in enumerate(icon):
@@ -356,7 +348,7 @@ def greeting_sequence(hat, weather_data, lock):
         hat.show()
         if not isleep(0.6):
             return
-        hat_clear(hat)
+        hat_reset(hat)
         if not isleep(0.3):
             return
 
@@ -389,7 +381,7 @@ def error_blink(hat):
                 hat.set_pixel(x, y, 120, 0, 0)
         hat.show()
         time.sleep(0.3)
-        hat_clear(hat)
+        hat_reset(hat)
         time.sleep(0.3)
 
 # ── Background Fetch Thread ──────────────────────────────────────────────────
@@ -420,9 +412,9 @@ def weather_fetch_loop(weather_data, lock, stop_event):
 # ── Hauptprogramm ─────────────────────────────────────────────────────────────
 def main():
     hat = UnicornHATMini()
-    patch_hat_show(hat)
+    patch_hat_spi(hat)
     hat.set_brightness(BRIGHTNESS)
-    hat_clear(hat)
+    hat_reset(hat)
 
     # Shared State
     weather_data = {}
@@ -519,7 +511,7 @@ def main():
             if auto_started:
                 if not button_override:
                     cycles_remaining = 0
-                    hat_clear(hat)
+                    hat_reset(hat)
                     print(f"[{now.strftime('%H:%M')}] Auto-Stop → Display AUS")
                 auto_started = False
                 button_override = False
@@ -536,8 +528,9 @@ def main():
         # Gruss-Sequenz hat Priorität
         if greeting_requested:
             greeting_requested = False
+            hat_reset(hat)
             greeting_sequence(hat, weather_data, lock)
-            hat_clear(hat)
+            hat_reset(hat)
             continue
 
         # Zeitsteuerung nur im Idle prüfen
@@ -548,6 +541,9 @@ def main():
         if cycles_remaining == 0:
             isleep(0.1)
             continue
+
+        # ── Sauberer Start für neuen Zyklus ──
+        hat_reset(hat)
 
         # ── Wetterdaten für diesen Zyklus holen ──
         with lock:
@@ -566,7 +562,7 @@ def main():
 
         if not isleep(ICON_SHOW_TIME):
             print("  [Phase 1] UNTERBROCHEN")
-            hat_clear(hat)
+            hat_reset(hat)
             continue
 
         # ── Phase 2: Temperatur scrollen ──
@@ -575,11 +571,11 @@ def main():
                      f"Max {format_temp(w['t_max'])}°C  ")
         if not hat_scroll(hat, temp_text, color=(220, 40, 80)):
             print("  [Phase 2] UNTERBROCHEN")
-            hat_clear(hat)
+            hat_reset(hat)
             continue
 
         if not isleep(0.5):
-            hat_clear(hat)
+            hat_reset(hat)
             continue
 
         # ── Phase 3: Regen scrollen ──
@@ -588,11 +584,11 @@ def main():
         print(f"  [Phase 3] {regen_label}")
         if not hat_scroll(hat, f"  {regen_label}  ", color=regen_color):
             print("  [Phase 3] UNTERBROCHEN")
-            hat_clear(hat)
+            hat_reset(hat)
             continue
 
         if not isleep(0.5):
-            hat_clear(hat)
+            hat_reset(hat)
             continue
 
         # ── Phase 4: Sonne scrollen ──
@@ -601,7 +597,7 @@ def main():
         print(f"  [Phase 4] {sonne_label}")
         if not hat_scroll(hat, f"  {sonne_label}  ", color=sonne_color):
             print("  [Phase 4] UNTERBROCHEN")
-            hat_clear(hat)
+            hat_reset(hat)
             continue
 
         print("  [Zyklus komplett]")
@@ -613,7 +609,7 @@ def main():
                 print("10 Zyklen abgeschlossen – Display AUS")
 
         # Display zwischen Zyklen zurücksetzen
-        hat_clear(hat)
+        hat_reset(hat)
         isleep(1)
 
 
