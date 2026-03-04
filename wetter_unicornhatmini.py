@@ -289,8 +289,12 @@ def patch_hat_spi(hat):
     hat.xfer = paced_xfer
 
 def hat_reset(hat):
-    """Kompletter Display-Reset: leeren + SPI stabilisieren."""
+    """Kompletter Display-Reset: Buffer nullen, zweimal senden, warten."""
     hat.clear()
+    for i in range(len(hat.buf)):
+        hat.buf[i] = 0
+    hat.show()
+    time.sleep(0.005)
     hat.show()
     time.sleep(0.01)
 
@@ -342,14 +346,17 @@ def greeting_sequence(hat, weather_data, lock):
     # 1) Herz 3x blinken (zentriert bei x=6)
     for _ in range(3):
         if interrupt.is_set():
+            hat_reset(hat)
             return
-        hat.clear()
+        hat_reset(hat)
         hat_set_icon(hat, ICON_HEART, 6)
         hat.show()
         if not isleep(0.6):
+            hat_reset(hat)
             return
         hat_reset(hat)
         if not isleep(0.3):
+            hat_reset(hat)
             return
 
     # 2) Gruss-Text scrollen
@@ -361,16 +368,19 @@ def greeting_sequence(hat, weather_data, lock):
         text += " und es scheint die Sonne"
     text += ". Tschuss!  "
     if not hat_scroll(hat, text, color=(255, 20, 80), speed=SCROLL_SPEED):
+        hat_reset(hat)
         return
 
     # 3) Wetter-Icon anzeigen
     if interrupt.is_set():
+        hat_reset(hat)
         return
-    hat.clear()
+    hat_reset(hat)
     icon = ICON_CLOUD if w['regen'] else ICON_SUN
     hat_set_icon(hat, icon, 6)
     hat.show()
     isleep(4)
+    hat_reset(hat)
 
 # ── Fehler-Blink ─────────────────────────────────────────────────────────────
 def error_blink(hat):
