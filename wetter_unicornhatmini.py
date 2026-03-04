@@ -265,45 +265,17 @@ def parse_weather(data):
     }
 
 # ── HAT-Hilfsfunktionen ───────────────────────────────────────────────────────
-SPI_INTER_DELAY = 0.001  # 1ms Pause zwischen links/rechts SPI-Transfer
-
-def patch_hat_show(hat):
-    """Patcht hat.show() um eine Pause zwischen den beiden SPI-Transfers
-    (links/rechts) einzufügen. Auf dem Pi 5 (RP1-Chip) braucht der
-    SPI-Bus diese Pause, sonst verliert eine Hälfte Daten."""
-    _COLS, _ROWS = 17, 7
-    _CHUNK = 28 * 8  # 224 Bytes pro Hälfte
-    _CMD = 0x80      # CMD_WRITE_DISPLAY
-
-    def patched_show():
-        # Buffer aus Display-Daten füllen
-        for i in range(_COLS * _ROWS):
-            ir, ig, ib = hat.lut[i]
-            r, g, b = hat.disp[i]
-            hat.buf[ir] = r
-            hat.buf[ig] = g
-            hat.buf[ib] = b
-
-        # Links senden
-        device, pin, offset = hat.left_matrix
-        hat.xfer(device, pin, [_CMD, 0x00] + hat.buf[offset:offset + _CHUNK])
-
-        # Kurze Pause – RP1-SPI braucht Zeit zwischen Chip-Selects
-        time.sleep(SPI_INTER_DELAY)
-
-        # Rechts senden
-        device, pin, offset = hat.right_matrix
-        hat.xfer(device, pin, [_CMD, 0x00] + hat.buf[offset:offset + _CHUNK])
-
-    hat.show = patched_show
-
 def hat_show(hat):
-    """Wrapper für hat.show()."""
+    """Wrapper für hat.show() – sendet Daten an beide Display-Hälften.
+    Ruft show() zweimal auf: Falls beim ersten Mal eine Hälfte
+    Daten verliert (RP1-SPI-Bug), korrigiert der zweite Aufruf."""
+    hat.show()
+    time.sleep(0.001)
     hat.show()
 
 def hat_clear(hat):
     hat.clear()
-    hat_show(hat)
+    hat.show()  # Einmal reicht zum Leeren
 
 def hat_set_icon(hat, icon, x_offset):
     for row_i, row in enumerate(icon):
@@ -422,9 +394,8 @@ def weather_fetch_loop(weather_data, lock, stop_event):
 
 # ── Hauptprogramm ─────────────────────────────────────────────────────────────
 def main():
-    hat = UnicornHATMini()
+    hat = UnicornHATMini(spi_max_speed_hz=400000)  # Langsamer SPI für Pi 5 Stabilität
     hat.set_brightness(BRIGHTNESS)
-    patch_hat_show(hat)  # SPI-Fix für Pi 5: Pause zwischen links/rechts
     hat_clear(hat)
 
     # Shared State
