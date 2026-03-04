@@ -517,6 +517,8 @@ def main():
             w = weather_data.copy()
 
         # ── Phase 1: Icons (5 Sekunden) ──
+        print("  [Phase 1] Icons")
+        hat_clear(hat)
         hat.clear()
         for icon, x_off in [
             (w['morning'], 0),
@@ -527,14 +529,17 @@ def main():
         hat.show()
 
         if not isleep(ICON_SHOW_TIME):
+            print("  [Phase 1] UNTERBROCHEN")
             hat_clear(hat)
             continue
 
         # ── Phase 2: Temperatur scrollen ──
-        if not hat_scroll(hat,
-                          f"  Min {format_temp(w['t_min'])}°C  "
-                          f"Max {format_temp(w['t_max'])}°C  ",
-                          color=(220, 40, 80)):
+        print("  [Phase 2] Temperatur")
+        hat_clear(hat)
+        temp_text = (f"  Min {format_temp(w['t_min'])}°C  "
+                     f"Max {format_temp(w['t_max'])}°C  ")
+        if not hat_scroll(hat, temp_text, color=(220, 40, 80)):
+            print("  [Phase 2] UNTERBROCHEN")
             hat_clear(hat)
             continue
 
@@ -545,7 +550,10 @@ def main():
         # ── Phase 3: Regen scrollen ──
         regen_label = "Regen Ja" if w['regen'] else "Regen Nein"
         regen_color = (60, 60, 200) if w['regen'] else (160, 80, 200)
+        print(f"  [Phase 3] {regen_label}")
+        hat_clear(hat)
         if not hat_scroll(hat, f"  {regen_label}  ", color=regen_color):
+            print("  [Phase 3] UNTERBROCHEN")
             hat_clear(hat)
             continue
 
@@ -556,9 +564,14 @@ def main():
         # ── Phase 4: Sonne scrollen ──
         sonne_label = "Sonne Ja" if w['sonne'] else "Sonne Nein"
         sonne_color = (220, 40, 80) if w['sonne'] else (160, 80, 200)
+        print(f"  [Phase 4] {sonne_label}")
+        hat_clear(hat)
         if not hat_scroll(hat, f"  {sonne_label}  ", color=sonne_color):
+            print("  [Phase 4] UNTERBROCHEN")
             hat_clear(hat)
             continue
+
+        print("  [Zyklus komplett]")
 
         # ── Zyklus-Ende ──
         if cycles_remaining > 0:
@@ -567,6 +580,7 @@ def main():
                 hat_clear(hat)
                 print("10 Zyklen abgeschlossen – Display AUS")
 
+        hat_clear(hat)
         isleep(1)
 
 
