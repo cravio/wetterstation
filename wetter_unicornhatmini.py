@@ -518,7 +518,6 @@ def main():
 
         # ── Phase 1: Icons (5 Sekunden) ──
         print("  [Phase 1] Icons")
-        hat_clear(hat)
         hat.clear()
         for icon, x_off in [
             (w['morning'], 0),
@@ -535,7 +534,6 @@ def main():
 
         # ── Phase 2: Temperatur scrollen ──
         print("  [Phase 2] Temperatur")
-        hat_clear(hat)
         temp_text = (f"  Min {format_temp(w['t_min'])}°C  "
                      f"Max {format_temp(w['t_max'])}°C  ")
         if not hat_scroll(hat, temp_text, color=(220, 40, 80)):
@@ -551,7 +549,6 @@ def main():
         regen_label = "Regen Ja" if w['regen'] else "Regen Nein"
         regen_color = (60, 60, 200) if w['regen'] else (160, 80, 200)
         print(f"  [Phase 3] {regen_label}")
-        hat_clear(hat)
         if not hat_scroll(hat, f"  {regen_label}  ", color=regen_color):
             print("  [Phase 3] UNTERBROCHEN")
             hat_clear(hat)
@@ -565,7 +562,6 @@ def main():
         sonne_label = "Sonne Ja" if w['sonne'] else "Sonne Nein"
         sonne_color = (220, 40, 80) if w['sonne'] else (160, 80, 200)
         print(f"  [Phase 4] {sonne_label}")
-        hat_clear(hat)
         if not hat_scroll(hat, f"  {sonne_label}  ", color=sonne_color):
             print("  [Phase 4] UNTERBROCHEN")
             hat_clear(hat)
@@ -580,7 +576,6 @@ def main():
                 hat_clear(hat)
                 print("10 Zyklen abgeschlossen – Display AUS")
 
-        hat_clear(hat)
         isleep(1)
 
 
