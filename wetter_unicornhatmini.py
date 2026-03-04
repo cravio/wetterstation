@@ -299,10 +299,10 @@ def patch_hat_spi(hat):
     hat.show = stable_show
 
 def hat_reset(hat):
-    """Kompletter Display-Reset: Buffer nullen, senden, warten."""
+    """Kompletter Display-Reset: Clear + Double-Show + Settle."""
     hat.clear()
-    for i in range(len(hat.buf)):
-        hat.buf[i] = 0
+    hat.show()
+    time.sleep(0.005)
     hat.show()
     time.sleep(0.01)
 
@@ -473,21 +473,21 @@ def main():
             cycles_remaining = DISPLAY_CYCLES
             button_override = True
             greeting_requested = False
-            print(f"Button A → Display AN ({DISPLAY_CYCLES} Zyklen)")
+            print(f"Button A → Display AN ({DISPLAY_CYCLES} Zyklen)", flush=True)
         elif channel == BUTTON_B:
             cycles_remaining = 0
             button_override = True
             greeting_requested = False
-            print("Button B → Display AUS")
+            print("Button B → Display AUS", flush=True)
         elif channel == BUTTON_X:
             cycles_remaining = CONTINUOUS
             button_override = True
             greeting_requested = False
-            print("Button X → Dauerbetrieb")
+            print("Button X → Dauerbetrieb", flush=True)
         elif channel == BUTTON_Y:
             cycles_remaining = 0
             greeting_requested = True
-            print("Button Y → Gruss")
+            print("Button Y → Gruss", flush=True)
 
     def button_poll_loop():
         """Pollt Button-States alle 50ms."""
@@ -508,7 +508,7 @@ def main():
             cmd = line.strip().lower()
             if cmd == 'r':
                 on_button(BUTTON_B)
-                print("Terminal → Reset")
+                print("Terminal → Reset", flush=True)
             elif cmd == 'a':
                 on_button(BUTTON_A)
             elif cmd == 'x':
@@ -538,14 +538,14 @@ def main():
             if not auto_started:
                 if not button_override:
                     cycles_remaining = CONTINUOUS
-                    print(f"[{now.strftime('%H:%M')}] Auto-Start → Dauerbetrieb")
+                    print(f"[{now.strftime('%H:%M')}] Auto-Start → Dauerbetrieb", flush=True)
                 auto_started = True
         elif hm == (AUTO_STOP_TIME[0], AUTO_STOP_TIME[1]):
             if auto_started:
                 if not button_override:
                     cycles_remaining = 0
                     hat_reset(hat)
-                    print(f"[{now.strftime('%H:%M')}] Auto-Stop → Display AUS")
+                    print(f"[{now.strftime('%H:%M')}] Auto-Stop → Display AUS", flush=True)
                 auto_started = False
                 button_override = False
         else:
@@ -583,7 +583,6 @@ def main():
             w = weather_data.copy()
 
         # ── Phase 1: Icons (5 Sekunden) ──
-        print("  [Phase 1] Icons")
         hat.clear()
         for icon, x_off in [
             (w['morning'], 0),
@@ -592,54 +591,56 @@ def main():
         ]:
             hat_set_icon(hat, icon, x_off)
         hat.show()
+        print("  [Phase 1] Icons", flush=True)
 
         if not isleep(ICON_SHOW_TIME):
-            print("  [Phase 1] UNTERBROCHEN")
+            print("  [Phase 1] UNTERBROCHEN", flush=True)
             hat_reset(hat)
             continue
 
         # ── Phase 2: Temperatur scrollen ──
-        print("  [Phase 2] Temperatur")
+        hat_reset(hat)
         temp_text = (f"  Min {format_temp(w['t_min'])}°C  "
                      f"Max {format_temp(w['t_max'])}°C  ")
+        print("  [Phase 2] Temperatur", flush=True)
         if not hat_scroll(hat, temp_text, color=(220, 40, 80)):
-            print("  [Phase 2] UNTERBROCHEN")
-            hat_reset(hat)
-            continue
-
-        if not isleep(0.5):
+            print("  [Phase 2] UNTERBROCHEN", flush=True)
             hat_reset(hat)
             continue
 
         # ── Phase 3: Regen scrollen ──
-        regen_label = "Regen Ja" if w['regen'] else "Regen Nein"
-        regen_color = (60, 60, 200) if w['regen'] else (160, 80, 200)
-        print(f"  [Phase 3] {regen_label}")
-        if not hat_scroll(hat, f"  {regen_label}  ", color=regen_color):
-            print("  [Phase 3] UNTERBROCHEN")
+        hat_reset(hat)
+        if not isleep(0.3):
             hat_reset(hat)
             continue
-
-        if not isleep(0.5):
+        regen_label = "Regen Ja" if w['regen'] else "Regen Nein"
+        regen_color = (60, 60, 200) if w['regen'] else (160, 80, 200)
+        print(f"  [Phase 3] {regen_label}", flush=True)
+        if not hat_scroll(hat, f"  {regen_label}  ", color=regen_color):
+            print("  [Phase 3] UNTERBROCHEN", flush=True)
             hat_reset(hat)
             continue
 
         # ── Phase 4: Sonne scrollen ──
+        hat_reset(hat)
+        if not isleep(0.3):
+            hat_reset(hat)
+            continue
         sonne_label = "Sonne Ja" if w['sonne'] else "Sonne Nein"
         sonne_color = (220, 40, 80) if w['sonne'] else (160, 80, 200)
-        print(f"  [Phase 4] {sonne_label}")
+        print(f"  [Phase 4] {sonne_label}", flush=True)
         if not hat_scroll(hat, f"  {sonne_label}  ", color=sonne_color):
-            print("  [Phase 4] UNTERBROCHEN")
+            print("  [Phase 4] UNTERBROCHEN", flush=True)
             hat_reset(hat)
             continue
 
-        print("  [Zyklus komplett]")
+        print("  [Zyklus komplett]", flush=True)
 
         # ── Zyklus-Ende ──
         if cycles_remaining > 0:
             cycles_remaining -= 1
             if cycles_remaining == 0:
-                print("10 Zyklen abgeschlossen – Display AUS")
+                print("10 Zyklen abgeschlossen – Display AUS", flush=True)
 
         # Display zwischen Zyklen zurücksetzen
         hat_reset(hat)
