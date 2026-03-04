@@ -512,12 +512,14 @@ def main():
                 on_button(BUTTON_A)
             elif cmd == 'x':
                 on_button(BUTTON_X)
+            elif cmd == 'y':
+                on_button(BUTTON_Y)
 
     threading.Thread(target=stdin_loop, daemon=True).start()
 
     print("Wetter-Display gestartet – Zürich")
     print("A = 10 Zyklen | B = Stop | X = Dauerbetrieb | Y = Gruss")
-    print("Terminal: r = Reset | a = 10 Zyklen | x = Dauerbetrieb")
+    print("Terminal: r = Reset | a = 10 Zyklen | x = Dauerbetrieb | y = Gruss")
     print(f"Auto: {AUTO_START_TIME[0]:02d}:{AUTO_START_TIME[1]:02d} Start → "
           f"{AUTO_STOP_TIME[0]:02d}:{AUTO_STOP_TIME[1]:02d} Stop")
     print("Warte auf erste Wetterdaten …")
