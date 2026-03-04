@@ -50,6 +50,9 @@ HRT = (255,  20,  80)   # Herz-Rot/Pink
 DISPLAY_W = 17
 DISPLAY_H =  7
 
+# ── Interrupt-Event (wird bei jedem Button-Druck gesetzt) ─────────────────────
+interrupt = threading.Event()
+
 # ── Icons ────────────────────────────────────────────────────────────────────
 ICON_SUN = [
     [OFF, OFF, SUN, OFF, OFF],
@@ -271,10 +274,26 @@ def hat_set_icon(hat, icon, x_offset):
         for col_i, color in enumerate(row):
             hat.set_pixel(x_offset + col_i, 1 + row_i, *color)
 
+# ── Interruptible Helpers ────────────────────────────────────────────────────
+def isleep(secs):
+    """Schläft, bricht aber sofort ab wenn interrupt gesetzt wird.
+    Returns True wenn komplett durchgeschlafen, False wenn unterbrochen."""
+    end = time.monotonic() + secs
+    while time.monotonic() < end:
+        if interrupt.is_set():
+            return False
+        time.sleep(0.02)
+    return True
+
 def hat_scroll(hat, text, color=(255, 200, 0), speed=SCROLL_SPEED):
+    """Scrollt Text über das Display.
+    Bricht sofort ab wenn interrupt gesetzt wird.
+    Returns True wenn komplett, False wenn unterbrochen."""
     columns = text_to_columns(text, fg=color)
     padded  = [[OFF] * DISPLAY_H] * DISPLAY_W + columns + [[OFF] * DISPLAY_H] * DISPLAY_W
     for start in range(len(padded) - DISPLAY_W + 1):
+        if interrupt.is_set():
+            return False
         hat.clear()
         for x in range(DISPLAY_W):
             for y in range(DISPLAY_H):
@@ -282,6 +301,51 @@ def hat_scroll(hat, text, color=(255, 200, 0), speed=SCROLL_SPEED):
                 hat.set_pixel(x, y, r, g, b)
         hat.show()
         time.sleep(speed)
+    return True
+
+# ── Gruss-Sequenz (Button Y) ─────────────────────────────────────────────────
+def greeting_sequence(hat, weather_data, lock):
+    """3x Herz blinken → Gruss scrollen → Wetter-Icon.
+    Komplett interruptible – bricht bei jedem Button-Druck sofort ab."""
+    with lock:
+        w = weather_data.copy() if weather_data else None
+
+    if not w:
+        print("Gruss: Keine Wetterdaten vorhanden.")
+        return
+
+    # 1) Herz 3x blinken (zentriert bei x=6)
+    for _ in range(3):
+        if interrupt.is_set():
+            return
+        hat.clear()
+        hat_set_icon(hat, ICON_HEART, 6)
+        hat.show()
+        if not isleep(0.6):
+            return
+        hat_clear(hat)
+        if not isleep(0.3):
+            return
+
+    # 2) Gruss-Text scrollen
+    t_max = format_temp(w['t_max'])
+    text = f"  Hallo Carla, hallo Maura, heute wird es {t_max}°C warm"
+    if w['regen']:
+        text += " und es regnet"
+    if w['sonne']:
+        text += " und es scheint die Sonne"
+    text += ". Tschuss!  "
+    if not hat_scroll(hat, text, color=(255, 20, 80), speed=SCROLL_SPEED):
+        return
+
+    # 3) Wetter-Icon anzeigen
+    if interrupt.is_set():
+        return
+    hat.clear()
+    icon = ICON_CLOUD if w['regen'] else ICON_SUN
+    hat_set_icon(hat, icon, 6)
+    hat.show()
+    isleep(4)
 
 # ── Fehler-Blink ─────────────────────────────────────────────────────────────
 def error_blink(hat):
@@ -294,43 +358,6 @@ def error_blink(hat):
         time.sleep(0.3)
         hat_clear(hat)
         time.sleep(0.3)
-
-# ── Gruss-Sequenz (Button Y) ─────────────────────────────────────────────────
-def greeting_sequence(hat, weather_data, lock):
-    """3x Herz blinken → Gruss scrollen → Wetter-Icon anzeigen."""
-    with lock:
-        w = weather_data.copy() if weather_data else None
-
-    if not w:
-        print("Gruss: Keine Wetterdaten vorhanden.")
-        return
-
-    # 1) Herz 3x blinken (zentriert bei x=6)
-    for _ in range(3):
-        hat.clear()
-        hat_set_icon(hat, ICON_HEART, 6)
-        hat.show()
-        time.sleep(0.6)
-        hat_clear(hat)
-        time.sleep(0.3)
-
-    # 2) Gruss-Text scrollen
-    t_max = format_temp(w['t_max'])
-    text = f"  Hallo Carla, hallo Maura, heute wird es {t_max}°C warm"
-    if w['regen']:
-        text += " und es regnet"
-    if w['sonne']:
-        text += " und es scheint die Sonne"
-    text += ". Tschuss!  "
-    hat_scroll(hat, text, color=(255, 20, 80), speed=SCROLL_SPEED)
-
-    # 3) Wetter-Icon anzeigen: Wolke bei Regen, Sonne bei kein Regen
-    hat.clear()
-    icon = ICON_CLOUD if w['regen'] else ICON_SUN
-    hat_set_icon(hat, icon, 6)
-    hat.show()
-    time.sleep(4)
-    hat_clear(hat)
 
 # ── Background Fetch Thread ──────────────────────────────────────────────────
 def weather_fetch_loop(weather_data, lock, stop_event):
@@ -367,14 +394,15 @@ def main():
     weather_data = {}
     lock = threading.Lock()
     cycles_remaining = 0
-    stop_event = threading.Event()
-    button_override = False   # True = Button hat Zeitlogik übersteuert
-    auto_started = False      # Verhindert wiederholtes Auto-Start in selber Minute
+    fetch_stop = threading.Event()
+    button_override = False
+    auto_started = False
+    greeting_requested = False
 
     # ── Background-Fetch starten ──
     fetch_thread = threading.Thread(
         target=weather_fetch_loop,
-        args=(weather_data, lock, stop_event),
+        args=(weather_data, lock, fetch_stop),
         daemon=True,
     )
     fetch_thread.start()
@@ -401,28 +429,29 @@ def main():
         lgpio.gpio_claim_input(btn_chip, pin, lgpio.SET_PULL_UP)
 
     def on_button(channel):
-        nonlocal cycles_remaining, button_override
+        nonlocal cycles_remaining, button_override, greeting_requested
+        # IMMER: Interrupt setzen → laufende Anzeige bricht sofort ab
+        interrupt.set()
+
         if channel == BUTTON_A:
             cycles_remaining = DISPLAY_CYCLES
             button_override = True
+            greeting_requested = False
             print(f"Button A → Display AN ({DISPLAY_CYCLES} Zyklen)")
         elif channel == BUTTON_B:
             cycles_remaining = 0
             button_override = True
-            hat_clear(hat)
+            greeting_requested = False
             print("Button B → Display AUS")
         elif channel == BUTTON_X:
             cycles_remaining = CONTINUOUS
             button_override = True
+            greeting_requested = False
             print("Button X → Dauerbetrieb")
         elif channel == BUTTON_Y:
-            # Display stoppen, dann Gruss-Sequenz starten
             cycles_remaining = 0
-            threading.Thread(
-                target=greeting_sequence,
-                args=(hat, weather_data, lock),
-                daemon=True,
-            ).start()
+            greeting_requested = True
+            print("Button Y → Gruss")
 
     def button_poll_loop():
         """Pollt Button-States alle 50ms."""
@@ -448,12 +477,8 @@ def main():
         time.sleep(0.5)
     print("Bereit.")
 
-    # ── Hilfsfunktion: prüft ob Display noch aktiv ──
-    def display_active():
-        return cycles_remaining != 0
-
     def check_schedule():
-        """Zeitsteuerung – wird nur im Idle aufgerufen, nicht mitten im Zyklus."""
+        """Zeitsteuerung – wird nur im Idle aufgerufen."""
         nonlocal cycles_remaining, button_override, auto_started
         now = datetime.now()
         hm = (now.hour, now.minute)
@@ -479,14 +504,26 @@ def main():
 
     # ── Main Loop ──
     while True:
-        # Zeitsteuerung nur prüfen wenn idle
-        check_schedule()
+        # Interrupt zurücksetzen – bereit für neuen Button-Druck
+        interrupt.clear()
 
-        if not display_active():
-            time.sleep(0.2)
+        # Gruss-Sequenz hat Priorität
+        if greeting_requested:
+            greeting_requested = False
+            greeting_sequence(hat, weather_data, lock)
+            hat_clear(hat)
             continue
 
-        # Wetterdaten für diesen Zyklus holen
+        # Zeitsteuerung nur im Idle prüfen
+        if cycles_remaining == 0:
+            check_schedule()
+
+        # Idle: Display aus, kurz schlafen
+        if cycles_remaining == 0:
+            isleep(0.1)
+            continue
+
+        # ── Wetterdaten für diesen Zyklus holen ──
         with lock:
             w = weather_data.copy()
 
@@ -500,43 +537,39 @@ def main():
             hat_set_icon(hat, icon, x_off)
         hat.show()
 
-        for _ in range(int(ICON_SHOW_TIME / 0.2)):
-            if not display_active():
-                break
-            time.sleep(0.2)
-
-        if not display_active():
+        if not isleep(ICON_SHOW_TIME):
             hat_clear(hat)
             continue
 
         # ── Phase 2: Temperatur scrollen ──
-        hat_clear(hat)
-        hat_scroll(hat,
-                   f"  Min {format_temp(w['t_min'])}°C  "
-                   f"Max {format_temp(w['t_max'])}°C  ",
-                   color=(220, 40, 80))
+        if not hat_scroll(hat,
+                          f"  Min {format_temp(w['t_min'])}°C  "
+                          f"Max {format_temp(w['t_max'])}°C  ",
+                          color=(220, 40, 80)):
+            hat_clear(hat)
+            continue
 
-        if not display_active():
+        if not isleep(0.5):
             hat_clear(hat)
             continue
 
         # ── Phase 3: Regen scrollen ──
-        hat_clear(hat)
-        time.sleep(0.5)
         regen_label = "Regen Ja" if w['regen'] else "Regen Nein"
         regen_color = (60, 60, 200) if w['regen'] else (160, 80, 200)
-        hat_scroll(hat, f"  {regen_label}  ", color=regen_color)
+        if not hat_scroll(hat, f"  {regen_label}  ", color=regen_color):
+            hat_clear(hat)
+            continue
 
-        if not display_active():
+        if not isleep(0.5):
             hat_clear(hat)
             continue
 
         # ── Phase 4: Sonne scrollen ──
-        hat_clear(hat)
-        time.sleep(0.5)
         sonne_label = "Sonne Ja" if w['sonne'] else "Sonne Nein"
         sonne_color = (220, 40, 80) if w['sonne'] else (160, 80, 200)
-        hat_scroll(hat, f"  {sonne_label}  ", color=sonne_color)
+        if not hat_scroll(hat, f"  {sonne_label}  ", color=sonne_color):
+            hat_clear(hat)
+            continue
 
         # ── Zyklus-Ende ──
         if cycles_remaining > 0:
@@ -545,7 +578,7 @@ def main():
                 hat_clear(hat)
                 print("10 Zyklen abgeschlossen – Display AUS")
 
-        time.sleep(1)
+        isleep(1)
 
 
 if __name__ == "__main__":
