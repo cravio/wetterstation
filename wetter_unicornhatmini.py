@@ -358,13 +358,14 @@ def main():
     )
     fetch_thread.start()
 
-    # ── Buttons (via RPi.GPIO, gleicher Backend wie unicornhatmini) ──
+    # ── Buttons (Polling-Thread, kompatibel mit Pi 4 + Pi 5) ──
     BUTTON_A = 5
     BUTTON_B = 6
     BUTTON_X = 16
     BUTTON_Y = 24
+    ALL_BUTTONS = (BUTTON_A, BUTTON_B, BUTTON_X, BUTTON_Y)
 
-    for pin in (BUTTON_A, BUTTON_B, BUTTON_X, BUTTON_Y):
+    for pin in ALL_BUTTONS:
         GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
     def on_button(channel):
@@ -389,8 +390,18 @@ def main():
                 daemon=True,
             ).start()
 
-    for pin in (BUTTON_A, BUTTON_B, BUTTON_X, BUTTON_Y):
-        GPIO.add_event_detect(pin, GPIO.FALLING, callback=on_button, bouncetime=300)
+    def button_poll_loop():
+        """Pollt Button-States alle 50ms (kein edge detect nötig)."""
+        prev = {pin: GPIO.HIGH for pin in ALL_BUTTONS}
+        while True:
+            for pin in ALL_BUTTONS:
+                state = GPIO.input(pin)
+                if state == GPIO.LOW and prev[pin] == GPIO.HIGH:
+                    on_button(pin)
+                prev[pin] = state
+            time.sleep(0.05)
+
+    threading.Thread(target=button_poll_loop, daemon=True).start()
 
     print("Wetter-Display gestartet – Zürich")
     print("A = 10 Zyklen | B = Stop | X = Dauerbetrieb | Y = Gruss")
