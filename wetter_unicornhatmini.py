@@ -573,9 +573,11 @@ def main():
         if cycles_remaining > 0:
             cycles_remaining -= 1
             if cycles_remaining == 0:
-                hat_clear(hat)
                 print("10 Zyklen abgeschlossen – Display AUS")
 
+        # Display zwischen Zyklen zurücksetzen (SPI clean state)
+        hat_clear(hat)
+        time.sleep(0.01)  # SPI-Bus kurz atmen lassen
         isleep(1)
 
 
