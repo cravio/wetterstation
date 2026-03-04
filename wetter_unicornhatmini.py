@@ -326,6 +326,7 @@ def hat_scroll(hat, text, color=(255, 200, 0), speed=SCROLL_SPEED):
     """Scrollt Text über das Display.
     Bricht sofort ab wenn interrupt gesetzt wird.
     Returns True wenn komplett, False wenn unterbrochen."""
+    hat_reset(hat)
     columns = text_to_columns(text, fg=color)
     padded  = [[OFF] * DISPLAY_H] * DISPLAY_W + columns + [[OFF] * DISPLAY_H] * DISPLAY_W
     for start in range(len(padded) - DISPLAY_W + 1):
@@ -368,6 +369,10 @@ def greeting_sequence(hat, weather_data, lock):
             return
 
     # 2) Gruss-Text scrollen
+    if interrupt.is_set():
+        hat_reset(hat)
+        return
+    hat_reset(hat)
     t_max = format_temp(w['t_max'])
     text = f"  Hallo Carla, hallo Maura, heute wird es {t_max}°C warm"
     if w['regen']:
@@ -375,6 +380,7 @@ def greeting_sequence(hat, weather_data, lock):
     if w['sonne']:
         text += " und es scheint die Sonne"
     text += ". Tschuss!  "
+    print("  [Gruss] Text scrollen", flush=True)
     if not hat_scroll(hat, text, color=(255, 20, 80), speed=SCROLL_SPEED):
         hat_reset(hat)
         return
@@ -387,6 +393,7 @@ def greeting_sequence(hat, weather_data, lock):
     icon = ICON_CLOUD if w['regen'] else ICON_SUN
     hat_set_icon(hat, icon, 6)
     hat.show()
+    print("  [Gruss] Wetter-Icon", flush=True)
     isleep(4)
     hat_reset(hat)
 
