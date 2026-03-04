@@ -299,10 +299,8 @@ def patch_hat_spi(hat):
     hat.show = stable_show
 
 def hat_reset(hat):
-    """Kompletter Display-Reset: Clear + Double-Show + Settle."""
+    """Kompletter Display-Reset."""
     hat.clear()
-    hat.show()
-    time.sleep(0.005)
     hat.show()
     time.sleep(0.01)
 
@@ -326,7 +324,6 @@ def hat_scroll(hat, text, color=(255, 200, 0), speed=SCROLL_SPEED):
     """Scrollt Text über das Display.
     Bricht sofort ab wenn interrupt gesetzt wird.
     Returns True wenn komplett, False wenn unterbrochen."""
-    hat_reset(hat)
     columns = text_to_columns(text, fg=color)
     padded  = [[OFF] * DISPLAY_H] * DISPLAY_W + columns + [[OFF] * DISPLAY_H] * DISPLAY_W
     for start in range(len(padded) - DISPLAY_W + 1):
@@ -344,35 +341,33 @@ def hat_scroll(hat, text, color=(255, 200, 0), speed=SCROLL_SPEED):
 # ── Gruss-Sequenz (Button Y) ─────────────────────────────────────────────────
 def greeting_sequence(hat, weather_data, lock):
     """3x Herz blinken → Gruss scrollen → Wetter-Icon.
-    Komplett interruptible – bricht bei jedem Button-Druck sofort ab."""
+    Komplett interruptible – bricht bei jedem Button-Druck sofort ab.
+    Caller macht hat_reset() vor und nach dem Aufruf."""
     with lock:
         w = weather_data.copy() if weather_data else None
 
     if not w:
-        print("Gruss: Keine Wetterdaten vorhanden.")
+        print("Gruss: Keine Wetterdaten vorhanden.", flush=True)
         return
 
     # 1) Herz 3x blinken (zentriert bei x=6)
+    print("  [Gruss] Herz", flush=True)
     for _ in range(3):
         if interrupt.is_set():
-            hat_reset(hat)
             return
-        hat_reset(hat)
+        hat.clear()
         hat_set_icon(hat, ICON_HEART, 6)
         hat.show()
         if not isleep(0.6):
-            hat_reset(hat)
             return
-        hat_reset(hat)
+        hat.clear()
+        hat.show()
         if not isleep(0.3):
-            hat_reset(hat)
             return
 
     # 2) Gruss-Text scrollen
     if interrupt.is_set():
-        hat_reset(hat)
         return
-    hat_reset(hat)
     t_max = format_temp(w['t_max'])
     text = f"  Hallo Carla, hallo Maura, heute wird es {t_max}°C warm"
     if w['regen']:
@@ -382,20 +377,17 @@ def greeting_sequence(hat, weather_data, lock):
     text += ". Tschuss!  "
     print("  [Gruss] Text scrollen", flush=True)
     if not hat_scroll(hat, text, color=(255, 20, 80), speed=SCROLL_SPEED):
-        hat_reset(hat)
         return
 
     # 3) Wetter-Icon anzeigen
     if interrupt.is_set():
-        hat_reset(hat)
         return
-    hat_reset(hat)
+    hat.clear()
     icon = ICON_CLOUD if w['regen'] else ICON_SUN
     hat_set_icon(hat, icon, 6)
     hat.show()
     print("  [Gruss] Wetter-Icon", flush=True)
     isleep(4)
-    hat_reset(hat)
 
 # ── Fehler-Blink ─────────────────────────────────────────────────────────────
 def error_blink(hat):
@@ -602,43 +594,36 @@ def main():
 
         if not isleep(ICON_SHOW_TIME):
             print("  [Phase 1] UNTERBROCHEN", flush=True)
-            hat_reset(hat)
             continue
 
         # ── Phase 2: Temperatur scrollen ──
-        hat_reset(hat)
         temp_text = (f"  Min {format_temp(w['t_min'])}°C  "
                      f"Max {format_temp(w['t_max'])}°C  ")
         print("  [Phase 2] Temperatur", flush=True)
         if not hat_scroll(hat, temp_text, color=(220, 40, 80)):
             print("  [Phase 2] UNTERBROCHEN", flush=True)
-            hat_reset(hat)
+            continue
+
+        if not isleep(0.5):
             continue
 
         # ── Phase 3: Regen scrollen ──
-        hat_reset(hat)
-        if not isleep(0.3):
-            hat_reset(hat)
-            continue
         regen_label = "Regen Ja" if w['regen'] else "Regen Nein"
         regen_color = (60, 60, 200) if w['regen'] else (160, 80, 200)
         print(f"  [Phase 3] {regen_label}", flush=True)
         if not hat_scroll(hat, f"  {regen_label}  ", color=regen_color):
             print("  [Phase 3] UNTERBROCHEN", flush=True)
-            hat_reset(hat)
+            continue
+
+        if not isleep(0.5):
             continue
 
         # ── Phase 4: Sonne scrollen ──
-        hat_reset(hat)
-        if not isleep(0.3):
-            hat_reset(hat)
-            continue
         sonne_label = "Sonne Ja" if w['sonne'] else "Sonne Nein"
         sonne_color = (220, 40, 80) if w['sonne'] else (160, 80, 200)
         print(f"  [Phase 4] {sonne_label}", flush=True)
         if not hat_scroll(hat, f"  {sonne_label}  ", color=sonne_color):
             print("  [Phase 4] UNTERBROCHEN", flush=True)
-            hat_reset(hat)
             continue
 
         print("  [Zyklus komplett]", flush=True)
