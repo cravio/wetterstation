@@ -494,8 +494,23 @@ def main():
 
     threading.Thread(target=button_poll_loop, daemon=True).start()
 
+    def stdin_loop():
+        """Liest Terminal-Eingaben: r = Reset, a = Start, x = Dauerbetrieb."""
+        for line in sys.stdin:
+            cmd = line.strip().lower()
+            if cmd == 'r':
+                on_button(BUTTON_B)
+                print("Terminal → Reset")
+            elif cmd == 'a':
+                on_button(BUTTON_A)
+            elif cmd == 'x':
+                on_button(BUTTON_X)
+
+    threading.Thread(target=stdin_loop, daemon=True).start()
+
     print("Wetter-Display gestartet – Zürich")
     print("A = 10 Zyklen | B = Stop | X = Dauerbetrieb | Y = Gruss")
+    print("Terminal: r = Reset | a = 10 Zyklen | x = Dauerbetrieb")
     print(f"Auto: {AUTO_START_TIME[0]:02d}:{AUTO_START_TIME[1]:02d} Start → "
           f"{AUTO_STOP_TIME[0]:02d}:{AUTO_STOP_TIME[1]:02d} Stop")
     print("Warte auf erste Wetterdaten …")
