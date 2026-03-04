@@ -18,7 +18,7 @@ import threading
 import requests
 from datetime import datetime
 from unicornhatmini import UnicornHATMini
-import RPi.GPIO as GPIO
+import lgpio
 
 # ── Einstellungen ─────────────────────────────────────────────────────────────
 SCROLL_SPEED    = 0.06
@@ -379,15 +379,26 @@ def main():
     )
     fetch_thread.start()
 
-    # ── Buttons (Polling-Thread, kompatibel mit Pi 4 + Pi 5) ──
+    # ── Buttons (lgpio direkt, kompatibel mit Pi 4 + Pi 5) ──
     BUTTON_A = 5
     BUTTON_B = 6
     BUTTON_X = 16
     BUTTON_Y = 24
     ALL_BUTTONS = (BUTTON_A, BUTTON_B, BUTTON_X, BUTTON_Y)
 
+    # Auto-detect GPIO chip: Pi 5 = gpiochip4, Pi 4 = gpiochip0
+    btn_chip = None
+    for chip_num in (4, 0):
+        try:
+            btn_chip = lgpio.gpiochip_open(chip_num)
+            break
+        except lgpio.error:
+            continue
+    if btn_chip is None:
+        print("FEHLER: Kein GPIO-Chip gefunden!")
+
     for pin in ALL_BUTTONS:
-        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        lgpio.gpio_claim_input(btn_chip, pin, lgpio.SET_PULL_UP)
 
     def on_button(channel):
         nonlocal cycles_remaining, button_override
@@ -405,6 +416,8 @@ def main():
             button_override = True
             print("Button X → Dauerbetrieb")
         elif channel == BUTTON_Y:
+            # Display stoppen, dann Gruss-Sequenz starten
+            cycles_remaining = 0
             threading.Thread(
                 target=greeting_sequence,
                 args=(hat, weather_data, lock),
@@ -412,12 +425,12 @@ def main():
             ).start()
 
     def button_poll_loop():
-        """Pollt Button-States alle 50ms (kein edge detect nötig)."""
-        prev = {pin: GPIO.HIGH for pin in ALL_BUTTONS}
+        """Pollt Button-States alle 50ms."""
+        prev = {pin: 1 for pin in ALL_BUTTONS}
         while True:
             for pin in ALL_BUTTONS:
-                state = GPIO.input(pin)
-                if state == GPIO.LOW and prev[pin] == GPIO.HIGH:
+                state = lgpio.gpio_read(btn_chip, pin)
+                if state == 0 and prev[pin] == 1:
                     on_button(pin)
                 prev[pin] = state
             time.sleep(0.05)
