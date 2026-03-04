@@ -169,6 +169,7 @@ FONT = {
     'M': ['1001','1111','1001','1001','1001'],
     'N': ['1001','1101','1011','1001','1001'],
     'R': ['1110','1001','1110','1100','1010'],
+    'S': ['0111','1000','0110','0001','1110'],
     'T': ['1110','0100','0100','0100','0100'],
     'W': ['1001','1001','1001','1111','0110'],
     'a': ['0000','0110','1010','1110','1001'],
@@ -234,17 +235,28 @@ def parse_weather(data):
     t_max = round(data['daily']['temperature_2m_max'][0], 1)
     t_min = round(data['daily']['temperature_2m_min'][0], 1)
 
+    now_hour = datetime.now().hour
+
     RAIN_CODES = {51,53,55,56,57,61,63,65,66,67,80,81,82,95,96,99}
+    SUN_CODES  = {0, 1}  # Klar / Überwiegend klar
+
+    # Ab jetziger Stunde bis 22 Uhr
     regen = any(
         codes[i] in RAIN_CODES
         for i, t in enumerate(times)
-        if 'T' in t and 6 <= int(t.split('T')[1][:2]) <= 22
+        if 'T' in t and now_hour <= int(t.split('T')[1][:2]) <= 22
     )
+    sonne = any(
+        codes[i] in SUN_CODES
+        for i, t in enumerate(times)
+        if 'T' in t and now_hour <= int(t.split('T')[1][:2]) <= 22
+    )
+
     return {
         'morning': wmo_to_icon(dominant_code(codes, times, range(6,  12)), 9),
         'midday':  wmo_to_icon(dominant_code(codes, times, range(12, 17)), 14),
         'evening': wmo_to_icon(dominant_code(codes, times, range(17, 22)), 19),
-        't_max': t_max, 't_min': t_min, 'regen': regen,
+        't_max': t_max, 't_min': t_min, 'regen': regen, 'sonne': sonne,
     }
 
 # ── HAT-Hilfsfunktionen ───────────────────────────────────────────────────────
@@ -325,8 +337,10 @@ def weather_fetch_loop(weather_data, lock, stop_event):
                 weather_data.update(parsed)
             t = datetime.now().strftime("%H:%M")
             regen_str = "Ja" if parsed['regen'] else "Nein"
+            sonne_str = "Ja" if parsed['sonne'] else "Nein"
             print(f"[{t}] Min {format_temp(parsed['t_min'])}°C / "
-                  f"Max {format_temp(parsed['t_max'])}°C | Regen: {regen_str}")
+                  f"Max {format_temp(parsed['t_max'])}°C | "
+                  f"Regen: {regen_str} | Sonne: {sonne_str}")
         except Exception as e:
             print(f"Fetch-Fehler: {e}")
 
@@ -480,6 +494,17 @@ def main():
             regen_label = "Regen Ja" if w['regen'] else "Regen Nein"
             regen_color = (60, 60, 200) if w['regen'] else (160, 80, 200)
             hat_scroll(hat, f"  {regen_label}  ", color=regen_color)
+
+            if cycles_remaining == 0:
+                hat_clear(hat)
+                continue
+
+            time.sleep(1)
+
+            # Sonne scrollen
+            sonne_label = "Sonne Ja" if w['sonne'] else "Sonne Nein"
+            sonne_color = (220, 40, 80) if w['sonne'] else (160, 80, 200)
+            hat_scroll(hat, f"  {sonne_label}  ", color=sonne_color)
 
             # Zyklus runterzählen (nur wenn nicht Dauerbetrieb)
             if cycles_remaining > 0:
