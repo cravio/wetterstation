@@ -265,17 +265,9 @@ def parse_weather(data):
     }
 
 # ── HAT-Hilfsfunktionen ───────────────────────────────────────────────────────
-def hat_show(hat):
-    """Wrapper für hat.show() – sendet Daten an beide Display-Hälften.
-    Ruft show() zweimal auf: Falls beim ersten Mal eine Hälfte
-    Daten verliert (RP1-SPI-Bug), korrigiert der zweite Aufruf."""
-    hat.show()
-    time.sleep(0.001)
-    hat.show()
-
 def hat_clear(hat):
     hat.clear()
-    hat.show()  # Einmal reicht zum Leeren
+    hat.show()
 
 def hat_set_icon(hat, icon, x_offset):
     for row_i, row in enumerate(icon):
@@ -307,7 +299,7 @@ def hat_scroll(hat, text, color=(255, 200, 0), speed=SCROLL_SPEED):
             for y in range(DISPLAY_H):
                 r, g, b = padded[start + x][y]
                 hat.set_pixel(x, y, r, g, b)
-        hat_show(hat)
+        hat.show()
         time.sleep(speed)
     return True
 
@@ -328,7 +320,7 @@ def greeting_sequence(hat, weather_data, lock):
             return
         hat.clear()
         hat_set_icon(hat, ICON_HEART, 6)
-        hat_show(hat)
+        hat.show()
         if not isleep(0.6):
             return
         hat_clear(hat)
@@ -352,7 +344,7 @@ def greeting_sequence(hat, weather_data, lock):
     hat.clear()
     icon = ICON_CLOUD if w['regen'] else ICON_SUN
     hat_set_icon(hat, icon, 6)
-    hat_show(hat)
+    hat.show()
     isleep(4)
 
 # ── Fehler-Blink ─────────────────────────────────────────────────────────────
@@ -362,7 +354,7 @@ def error_blink(hat):
         for x in range(DISPLAY_W):
             for y in range(DISPLAY_H):
                 hat.set_pixel(x, y, 120, 0, 0)
-        hat_show(hat)
+        hat.show()
         time.sleep(0.3)
         hat_clear(hat)
         time.sleep(0.3)
@@ -394,7 +386,7 @@ def weather_fetch_loop(weather_data, lock, stop_event):
 
 # ── Hauptprogramm ─────────────────────────────────────────────────────────────
 def main():
-    hat = UnicornHATMini(spi_max_speed_hz=400000)  # Langsamer SPI für Pi 5 Stabilität
+    hat = UnicornHATMini()
     hat.set_brightness(BRIGHTNESS)
     hat_clear(hat)
 
@@ -533,7 +525,7 @@ def main():
             (w['evening'], 12),
         ]:
             hat_set_icon(hat, icon, x_off)
-        hat_show(hat)
+        hat.show()
 
         if not isleep(ICON_SHOW_TIME):
             print("  [Phase 1] UNTERBROCHEN")
