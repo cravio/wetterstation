@@ -176,9 +176,11 @@ FONT = {
     'd': ['0001','0001','0111','1001','0111'],
     'e': ['0000','0110','1110','1000','0110'],
     'g': ['0000','0111','1010','0111','0001'],
+    'c': ['0000','0110','1000','1000','0110'],
     'h': ['1000','1000','1110','1001','1001'],
     'i': ['0110','0000','0110','0110','0110'],
     'l': ['0110','0010','0010','0010','0111'],
+    'm': ['0000','1111','1001','1001','1001'],
     'n': ['0000','1100','1010','1010','1010'],
     'o': ['0000','0110','1001','1001','0110'],
     'r': ['0000','1011','1100','1000','1000'],
@@ -240,16 +242,16 @@ def parse_weather(data):
     RAIN_CODES = {51,53,55,56,57,61,63,65,66,67,80,81,82,95,96,99}
     SUN_CODES  = {0, 1}  # Klar / Überwiegend klar
 
-    # Ab jetziger Stunde bis 22 Uhr
+    # Ab jetziger Stunde bis 23:59
     regen = any(
         codes[i] in RAIN_CODES
         for i, t in enumerate(times)
-        if 'T' in t and now_hour <= int(t.split('T')[1][:2]) <= 22
+        if 'T' in t and int(t.split('T')[1][:2]) >= now_hour
     )
     sonne = any(
         codes[i] in SUN_CODES
         for i, t in enumerate(times)
-        if 'T' in t and now_hour <= int(t.split('T')[1][:2]) <= 22
+        if 'T' in t and int(t.split('T')[1][:2]) >= now_hour
     )
 
     return {
@@ -314,7 +316,12 @@ def greeting_sequence(hat, weather_data, lock):
 
     # 2) Gruss-Text scrollen
     t_max = format_temp(w['t_max'])
-    text = f"  Hallo Carla, hallo Maura, heute wird es {t_max}°C warm. Tschuss!  "
+    text = f"  Hallo Carla, hallo Maura, heute wird es {t_max}°C warm"
+    if w['regen']:
+        text += " und es regnet"
+    if w['sonne']:
+        text += " und es scheint die Sonne"
+    text += ". Tschuss!  "
     hat_scroll(hat, text, color=(255, 20, 80), speed=SCROLL_SPEED)
 
     # 3) Wetter-Icon anzeigen: Wolke bei Regen, Sonne bei kein Regen
