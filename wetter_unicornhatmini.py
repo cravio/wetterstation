@@ -18,7 +18,7 @@ import threading
 import requests
 from datetime import datetime
 from unicornhatmini import UnicornHATMini
-import lgpio
+import RPi.GPIO as GPIO
 
 # ── Einstellungen ─────────────────────────────────────────────────────────────
 SCROLL_SPEED    = 0.06
@@ -407,26 +407,15 @@ def main():
     )
     fetch_thread.start()
 
-    # ── Buttons (lgpio direkt, kompatibel mit Pi 4 + Pi 5) ──
+    # ── Buttons (RPi.GPIO, gleicher Handle wie UnicornHATMini, nur Polling) ──
     BUTTON_A = 5
     BUTTON_B = 6
     BUTTON_X = 16
     BUTTON_Y = 24
     ALL_BUTTONS = (BUTTON_A, BUTTON_B, BUTTON_X, BUTTON_Y)
 
-    # Auto-detect GPIO chip: Pi 5 = gpiochip4, Pi 4 = gpiochip0
-    btn_chip = None
-    for chip_num in (4, 0):
-        try:
-            btn_chip = lgpio.gpiochip_open(chip_num)
-            break
-        except lgpio.error:
-            continue
-    if btn_chip is None:
-        print("FEHLER: Kein GPIO-Chip gefunden!")
-
     for pin in ALL_BUTTONS:
-        lgpio.gpio_claim_input(btn_chip, pin, lgpio.SET_PULL_UP)
+        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
     def on_button(channel):
         nonlocal cycles_remaining, button_override, greeting_requested
@@ -458,7 +447,7 @@ def main():
         prev = {pin: 1 for pin in ALL_BUTTONS}
         while True:
             for pin in ALL_BUTTONS:
-                state = lgpio.gpio_read(btn_chip, pin)
+                state = GPIO.input(pin)
                 if state == 0 and prev[pin] == 1:
                     on_button(pin)
                 prev[pin] = state
