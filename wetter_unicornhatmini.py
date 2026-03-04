@@ -4,7 +4,7 @@
 ║   Wetter-Display – Pimoroni Unicorn HAT Mini (17×7)      ║
 ║   Raspberry Pi Hardware-Version                          ║
 ║   Voraussetzung: pip3 install unicornhatmini requests    ║
-║   Starten: python3 wetter_unicornhatmini.py              ║
+║   Starten: python3 wetter_unicornhatmini.py [--start]     ║
 ║                                                          ║
 ║   Button A = Display starten (10 Zyklen)                 ║
 ║   Button B = Display sofort stoppen                      ║
@@ -13,6 +13,7 @@
 ╚══════════════════════════════════════════════════════════╝
 """
 
+import sys
 import time
 import threading
 import requests
@@ -265,6 +266,31 @@ def parse_weather(data):
     }
 
 # ── HAT-Hilfsfunktionen ───────────────────────────────────────────────────────
+def patch_hat_show(hat):
+    """Monkey-Patch: 1ms Pause zwischen linkem und rechtem SPI-Transfer.
+    Nötig auf Pi 5, da der RP1-SPI-Controller sonst die linke Hälfte verliert."""
+    _COLS, _ROWS = 17, 7
+    _CHUNK = 28 * 8
+    _CMD = 0x80
+
+    def patched_show():
+        for i in range(_COLS * _ROWS):
+            ir, ig, ib = hat.lut[i]
+            r, g, b = hat.disp[i]
+            hat.buf[ir] = r
+            hat.buf[ig] = g
+            hat.buf[ib] = b
+
+        device, pin, offset = hat.left_matrix
+        hat.xfer(device, pin, [_CMD, 0x00] + hat.buf[offset:offset + _CHUNK])
+
+        time.sleep(0.001)
+
+        device, pin, offset = hat.right_matrix
+        hat.xfer(device, pin, [_CMD, 0x00] + hat.buf[offset:offset + _CHUNK])
+
+    hat.show = patched_show
+
 def hat_clear(hat):
     hat.clear()
     hat.show()
@@ -387,6 +413,7 @@ def weather_fetch_loop(weather_data, lock, stop_event):
 # ── Hauptprogramm ─────────────────────────────────────────────────────────────
 def main():
     hat = UnicornHATMini()
+    patch_hat_show(hat)
     hat.set_brightness(BRIGHTNESS)
     hat_clear(hat)
 
@@ -394,6 +421,9 @@ def main():
     weather_data = {}
     lock = threading.Lock()
     cycles_remaining = 0
+    if '--start' in sys.argv:
+        cycles_remaining = DISPLAY_CYCLES
+        print(f"--start → Display AN ({DISPLAY_CYCLES} Zyklen)")
     fetch_stop = threading.Event()
     button_override = False
     auto_started = False
