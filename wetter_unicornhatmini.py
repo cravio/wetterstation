@@ -29,6 +29,10 @@ BRIGHTNESS      = 0.4
 DISPLAY_CYCLES  = 10
 CONTINUOUS       = -1   # Spezieller Wert für Dauerbetrieb
 
+# ── Zeitsteuerung (Stunde, Minute) ────────────────────────────────────────────
+AUTO_START_TIME = (7, 0)    # 07:00 → Dauerbetrieb starten
+AUTO_STOP_TIME  = (8, 30)   # 08:30 → Display stoppen
+
 # ── Zürich ───────────────────────────────────────────────────────────────────
 LAT, LON = 47.3769, 8.5417
 
@@ -344,6 +348,8 @@ def main():
     lock = threading.Lock()
     cycles_remaining = 0
     stop_event = threading.Event()
+    button_override = False   # True = Button hat Zeitlogik übersteuert
+    auto_started = False      # Verhindert wiederholtes Auto-Start in selber Minute
 
     # ── Background-Fetch starten ──
     fetch_thread = threading.Thread(
@@ -360,19 +366,22 @@ def main():
     button_y = Button(24)
 
     def on_button_a():
-        nonlocal cycles_remaining
+        nonlocal cycles_remaining, button_override
         cycles_remaining = DISPLAY_CYCLES
+        button_override = True
         print(f"Button A → Display AN ({DISPLAY_CYCLES} Zyklen)")
 
     def on_button_b():
-        nonlocal cycles_remaining
+        nonlocal cycles_remaining, button_override
         cycles_remaining = 0
+        button_override = True
         hat_clear(hat)
         print("Button B → Display AUS")
 
     def on_button_x():
-        nonlocal cycles_remaining
+        nonlocal cycles_remaining, button_override
         cycles_remaining = CONTINUOUS
+        button_override = True
         print("Button X → Dauerbetrieb")
 
     def on_button_y():
@@ -390,6 +399,8 @@ def main():
 
     print("Wetter-Display gestartet – Zürich")
     print("A = 10 Zyklen | B = Stop | X = Dauerbetrieb | Y = Gruss")
+    print(f"Auto: {AUTO_START_TIME[0]:02d}:{AUTO_START_TIME[1]:02d} Start → "
+          f"{AUTO_STOP_TIME[0]:02d}:{AUTO_STOP_TIME[1]:02d} Stop")
     print("Warte auf erste Wetterdaten …")
 
     # Warte bis erste Daten da sind
@@ -399,6 +410,30 @@ def main():
 
     # ── Main Loop ──
     while True:
+        # ── Zeitsteuerung ──
+        now = datetime.now()
+        hm = (now.hour, now.minute)
+
+        if hm == (AUTO_START_TIME[0], AUTO_START_TIME[1]):
+            if not auto_started:
+                if not button_override:
+                    cycles_remaining = CONTINUOUS
+                    print(f"[{now.strftime('%H:%M')}] Auto-Start → Dauerbetrieb")
+                auto_started = True
+        elif hm == (AUTO_STOP_TIME[0], AUTO_STOP_TIME[1]):
+            if auto_started:
+                if not button_override:
+                    cycles_remaining = 0
+                    hat_clear(hat)
+                    print(f"[{now.strftime('%H:%M')}] Auto-Stop → Display AUS")
+                auto_started = False
+                button_override = False  # Reset: nächster Zeitzyklus gilt wieder
+        else:
+            # Ausserhalb der Schaltminuten: auto_started-Flag zurücksetzen
+            if auto_started and hm > (AUTO_STOP_TIME[0], AUTO_STOP_TIME[1]):
+                auto_started = False
+                button_override = False
+
         if cycles_remaining != 0:
             with lock:
                 w = weather_data.copy()
