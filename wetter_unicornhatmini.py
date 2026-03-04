@@ -239,7 +239,11 @@ def dominant_code(codes, times, hour_range):
     has_sun   = bool(code_set & {0, 1})
     has_cloud = bool(code_set & {2, 3})
     if has_sun and has_cloud:
-        return 2
+        sun_count   = sum(1 for v in vals if v in (0, 1))
+        cloud_count = sum(1 for v in vals if v in (2, 3))
+        total = sun_count + cloud_count
+        if total > 0 and min(sun_count, cloud_count) / total >= 0.3:
+            return 2
     return max(set(vals), key=vals.count)
 
 def parse_weather(data):
@@ -274,9 +278,9 @@ def parse_weather(data):
 
 # ── HAT-Hilfsfunktionen ───────────────────────────────────────────────────────
 def patch_hat_spi(hat):
-    """Erzwingt 1ms Mindest-Pause zwischen SPI-Transfers.
-    Nötig auf Pi 5 (RP1), lässt die Original-show()-Logik der Library intakt."""
+    """Pi 5 SPI-Fix: xfer-Pacing (1ms) + Double-Show für beide Hälften."""
     original_xfer = hat.xfer
+    original_show = hat.show
     last_xfer = [0.0]
 
     def paced_xfer(device, pin, command):
@@ -286,15 +290,19 @@ def patch_hat_spi(hat):
         original_xfer(device, pin, command)
         last_xfer[0] = time.monotonic()
 
+    def stable_show():
+        original_show()
+        time.sleep(0.002)
+        original_show()
+
     hat.xfer = paced_xfer
+    hat.show = stable_show
 
 def hat_reset(hat):
-    """Kompletter Display-Reset: Buffer nullen, zweimal senden, warten."""
+    """Kompletter Display-Reset: Buffer nullen, senden, warten."""
     hat.clear()
     for i in range(len(hat.buf)):
         hat.buf[i] = 0
-    hat.show()
-    time.sleep(0.005)
     hat.show()
     time.sleep(0.01)
 
