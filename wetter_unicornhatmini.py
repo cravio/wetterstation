@@ -4,7 +4,6 @@
 ║   Wetter-Display – Pimoroni Unicorn HAT Mini (17×7)      ║
 ║   Raspberry Pi Hardware-Version                          ║
 ║   Voraussetzung: pip3 install unicornhatmini requests    ║
-║                  pip3 install gpiozero                   ║
 ║   Starten: python3 wetter_unicornhatmini.py              ║
 ║                                                          ║
 ║   Button A = Display starten (10 Zyklen)                 ║
@@ -19,7 +18,7 @@ import threading
 import requests
 from datetime import datetime
 from unicornhatmini import UnicornHATMini
-from gpiozero import Button
+import RPi.GPIO as GPIO
 
 # ── Einstellungen ─────────────────────────────────────────────────────────────
 SCROLL_SPEED    = 0.06
@@ -359,43 +358,39 @@ def main():
     )
     fetch_thread.start()
 
-    # ── Buttons ──
-    button_a = Button(5)
-    button_b = Button(6)
-    button_x = Button(16)
-    button_y = Button(24)
+    # ── Buttons (via RPi.GPIO, gleicher Backend wie unicornhatmini) ──
+    BUTTON_A = 5
+    BUTTON_B = 6
+    BUTTON_X = 16
+    BUTTON_Y = 24
 
-    def on_button_a():
+    for pin in (BUTTON_A, BUTTON_B, BUTTON_X, BUTTON_Y):
+        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+    def on_button(channel):
         nonlocal cycles_remaining, button_override
-        cycles_remaining = DISPLAY_CYCLES
-        button_override = True
-        print(f"Button A → Display AN ({DISPLAY_CYCLES} Zyklen)")
+        if channel == BUTTON_A:
+            cycles_remaining = DISPLAY_CYCLES
+            button_override = True
+            print(f"Button A → Display AN ({DISPLAY_CYCLES} Zyklen)")
+        elif channel == BUTTON_B:
+            cycles_remaining = 0
+            button_override = True
+            hat_clear(hat)
+            print("Button B → Display AUS")
+        elif channel == BUTTON_X:
+            cycles_remaining = CONTINUOUS
+            button_override = True
+            print("Button X → Dauerbetrieb")
+        elif channel == BUTTON_Y:
+            threading.Thread(
+                target=greeting_sequence,
+                args=(hat, weather_data, lock),
+                daemon=True,
+            ).start()
 
-    def on_button_b():
-        nonlocal cycles_remaining, button_override
-        cycles_remaining = 0
-        button_override = True
-        hat_clear(hat)
-        print("Button B → Display AUS")
-
-    def on_button_x():
-        nonlocal cycles_remaining, button_override
-        cycles_remaining = CONTINUOUS
-        button_override = True
-        print("Button X → Dauerbetrieb")
-
-    def on_button_y():
-        # Gruss-Sequenz in eigenem Thread, damit Main-Loop nicht blockiert
-        threading.Thread(
-            target=greeting_sequence,
-            args=(hat, weather_data, lock),
-            daemon=True,
-        ).start()
-
-    button_a.when_pressed = on_button_a
-    button_b.when_pressed = on_button_b
-    button_x.when_pressed = on_button_x
-    button_y.when_pressed = on_button_y
+    for pin in (BUTTON_A, BUTTON_B, BUTTON_X, BUTTON_Y):
+        GPIO.add_event_detect(pin, GPIO.FALLING, callback=on_button, bouncetime=300)
 
     print("Wetter-Display gestartet – Zürich")
     print("A = 10 Zyklen | B = Stop | X = Dauerbetrieb | Y = Gruss")
