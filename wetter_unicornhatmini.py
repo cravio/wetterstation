@@ -233,7 +233,14 @@ def fetch_weather():
 def dominant_code(codes, times, hour_range):
     vals = [codes[i] for i, t in enumerate(times)
             if 'T' in t and int(t.split('T')[1][:2]) in hour_range]
-    return max(set(vals), key=vals.count) if vals else 0
+    if not vals:
+        return 0
+    code_set = set(vals)
+    has_sun   = bool(code_set & {0, 1})
+    has_cloud = bool(code_set & {2, 3})
+    if has_sun and has_cloud:
+        return 2
+    return max(set(vals), key=vals.count)
 
 def parse_weather(data):
     times = data['hourly']['time']
