@@ -265,9 +265,17 @@ def parse_weather(data):
     }
 
 # ── HAT-Hilfsfunktionen ───────────────────────────────────────────────────────
+SPI_SETTLE = 0.005  # 5ms Pause nach jedem SPI-Transfer
+
+def hat_show(hat):
+    """Wrapper für hat.show() mit SPI-Settle-Time.
+    Verhindert, dass der Dual-SPI-Bus überlastet wird."""
+    hat.show()
+    time.sleep(SPI_SETTLE)
+
 def hat_clear(hat):
     hat.clear()
-    hat.show()
+    hat_show(hat)
 
 def hat_set_icon(hat, icon, x_offset):
     for row_i, row in enumerate(icon):
@@ -299,7 +307,7 @@ def hat_scroll(hat, text, color=(255, 200, 0), speed=SCROLL_SPEED):
             for y in range(DISPLAY_H):
                 r, g, b = padded[start + x][y]
                 hat.set_pixel(x, y, r, g, b)
-        hat.show()
+        hat_show(hat)
         time.sleep(speed)
     return True
 
@@ -320,7 +328,7 @@ def greeting_sequence(hat, weather_data, lock):
             return
         hat.clear()
         hat_set_icon(hat, ICON_HEART, 6)
-        hat.show()
+        hat_show(hat)
         if not isleep(0.6):
             return
         hat_clear(hat)
@@ -344,7 +352,7 @@ def greeting_sequence(hat, weather_data, lock):
     hat.clear()
     icon = ICON_CLOUD if w['regen'] else ICON_SUN
     hat_set_icon(hat, icon, 6)
-    hat.show()
+    hat_show(hat)
     isleep(4)
 
 # ── Fehler-Blink ─────────────────────────────────────────────────────────────
@@ -354,7 +362,7 @@ def error_blink(hat):
         for x in range(DISPLAY_W):
             for y in range(DISPLAY_H):
                 hat.set_pixel(x, y, 120, 0, 0)
-        hat.show()
+        hat_show(hat)
         time.sleep(0.3)
         hat_clear(hat)
         time.sleep(0.3)
@@ -525,7 +533,7 @@ def main():
             (w['evening'], 12),
         ]:
             hat_set_icon(hat, icon, x_off)
-        hat.show()
+        hat_show(hat)
 
         if not isleep(ICON_SHOW_TIME):
             print("  [Phase 1] UNTERBROCHEN")
