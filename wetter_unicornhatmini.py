@@ -265,13 +265,41 @@ def parse_weather(data):
     }
 
 # ── HAT-Hilfsfunktionen ───────────────────────────────────────────────────────
-SPI_SETTLE = 0.005  # 5ms Pause nach jedem SPI-Transfer
+SPI_INTER_DELAY = 0.001  # 1ms Pause zwischen links/rechts SPI-Transfer
+
+def patch_hat_show(hat):
+    """Patcht hat.show() um eine Pause zwischen den beiden SPI-Transfers
+    (links/rechts) einzufügen. Auf dem Pi 5 (RP1-Chip) braucht der
+    SPI-Bus diese Pause, sonst verliert eine Hälfte Daten."""
+    _COLS, _ROWS = 17, 7
+    _CHUNK = 28 * 8  # 224 Bytes pro Hälfte
+    _CMD = 0x80      # CMD_WRITE_DISPLAY
+
+    def patched_show():
+        # Buffer aus Display-Daten füllen
+        for i in range(_COLS * _ROWS):
+            ir, ig, ib = hat.lut[i]
+            r, g, b = hat.disp[i]
+            hat.buf[ir] = r
+            hat.buf[ig] = g
+            hat.buf[ib] = b
+
+        # Links senden
+        device, pin, offset = hat.left_matrix
+        hat.xfer(device, pin, [_CMD, 0x00] + hat.buf[offset:offset + _CHUNK])
+
+        # Kurze Pause – RP1-SPI braucht Zeit zwischen Chip-Selects
+        time.sleep(SPI_INTER_DELAY)
+
+        # Rechts senden
+        device, pin, offset = hat.right_matrix
+        hat.xfer(device, pin, [_CMD, 0x00] + hat.buf[offset:offset + _CHUNK])
+
+    hat.show = patched_show
 
 def hat_show(hat):
-    """Wrapper für hat.show() mit SPI-Settle-Time.
-    Verhindert, dass der Dual-SPI-Bus überlastet wird."""
+    """Wrapper für hat.show()."""
     hat.show()
-    time.sleep(SPI_SETTLE)
 
 def hat_clear(hat):
     hat.clear()
@@ -396,6 +424,7 @@ def weather_fetch_loop(weather_data, lock, stop_event):
 def main():
     hat = UnicornHATMini()
     hat.set_brightness(BRIGHTNESS)
+    patch_hat_show(hat)  # SPI-Fix für Pi 5: Pause zwischen links/rechts
     hat_clear(hat)
 
     # Shared State
@@ -583,9 +612,8 @@ def main():
             if cycles_remaining == 0:
                 print("10 Zyklen abgeschlossen – Display AUS")
 
-        # Display zwischen Zyklen zurücksetzen (SPI clean state)
+        # Display zwischen Zyklen zurücksetzen
         hat_clear(hat)
-        time.sleep(0.01)  # SPI-Bus kurz atmen lassen
         isleep(1)
 
 
