@@ -448,9 +448,13 @@ def main():
         time.sleep(0.5)
     print("Bereit.")
 
-    # ── Main Loop ──
-    while True:
-        # ── Zeitsteuerung ──
+    # ── Hilfsfunktion: prüft ob Display noch aktiv ──
+    def display_active():
+        return cycles_remaining != 0
+
+    def check_schedule():
+        """Zeitsteuerung – wird nur im Idle aufgerufen, nicht mitten im Zyklus."""
+        nonlocal cycles_remaining, button_override, auto_started
         now = datetime.now()
         hm = (now.hour, now.minute)
 
@@ -467,76 +471,81 @@ def main():
                     hat_clear(hat)
                     print(f"[{now.strftime('%H:%M')}] Auto-Stop → Display AUS")
                 auto_started = False
-                button_override = False  # Reset: nächster Zeitzyklus gilt wieder
+                button_override = False
         else:
-            # Ausserhalb der Schaltminuten: auto_started-Flag zurücksetzen
             if auto_started and hm > (AUTO_STOP_TIME[0], AUTO_STOP_TIME[1]):
                 auto_started = False
                 button_override = False
 
-        if cycles_remaining != 0:
-            with lock:
-                w = weather_data.copy()
+    # ── Main Loop ──
+    while True:
+        # Zeitsteuerung nur prüfen wenn idle
+        check_schedule()
 
-            # Icons anzeigen
-            hat.clear()
-            for icon, x_off in [
-                (w['morning'], 0),
-                (w['midday'],  6),
-                (w['evening'], 12),
-            ]:
-                hat_set_icon(hat, icon, x_off)
-            hat.show()
-
-            # Interruptible sleep für Icon-Anzeige
-            for _ in range(int(ICON_SHOW_TIME / 0.2)):
-                if cycles_remaining == 0:
-                    break
-                time.sleep(0.2)
-
-            if cycles_remaining == 0:
-                hat_clear(hat)
-                continue
-
-            # Temperatur scrollen
-            hat_scroll(hat,
-                       f"  Min {format_temp(w['t_min'])}°C  "
-                       f"Max {format_temp(w['t_max'])}°C  ",
-                       color=(220, 40, 80))
-
-            if cycles_remaining == 0:
-                hat_clear(hat)
-                continue
-
-            time.sleep(1)
-
-            # Regen scrollen
-            regen_label = "Regen Ja" if w['regen'] else "Regen Nein"
-            regen_color = (60, 60, 200) if w['regen'] else (160, 80, 200)
-            hat_scroll(hat, f"  {regen_label}  ", color=regen_color)
-
-            if cycles_remaining == 0:
-                hat_clear(hat)
-                continue
-
-            time.sleep(1)
-
-            # Sonne scrollen
-            sonne_label = "Sonne Ja" if w['sonne'] else "Sonne Nein"
-            sonne_color = (220, 40, 80) if w['sonne'] else (160, 80, 200)
-            hat_scroll(hat, f"  {sonne_label}  ", color=sonne_color)
-
-            # Zyklus runterzählen (nur wenn nicht Dauerbetrieb)
-            if cycles_remaining > 0:
-                cycles_remaining -= 1
-                if cycles_remaining == 0:
-                    hat_clear(hat)
-                    print("10 Zyklen abgeschlossen – Display AUS")
-
-            time.sleep(1)
-        else:
-            # Display aus – idle, wenig CPU
+        if not display_active():
             time.sleep(0.2)
+            continue
+
+        # Wetterdaten für diesen Zyklus holen
+        with lock:
+            w = weather_data.copy()
+
+        # ── Phase 1: Icons (5 Sekunden) ──
+        hat.clear()
+        for icon, x_off in [
+            (w['morning'], 0),
+            (w['midday'],  6),
+            (w['evening'], 12),
+        ]:
+            hat_set_icon(hat, icon, x_off)
+        hat.show()
+
+        for _ in range(int(ICON_SHOW_TIME / 0.2)):
+            if not display_active():
+                break
+            time.sleep(0.2)
+
+        if not display_active():
+            hat_clear(hat)
+            continue
+
+        # ── Phase 2: Temperatur scrollen ──
+        hat_clear(hat)
+        hat_scroll(hat,
+                   f"  Min {format_temp(w['t_min'])}°C  "
+                   f"Max {format_temp(w['t_max'])}°C  ",
+                   color=(220, 40, 80))
+
+        if not display_active():
+            hat_clear(hat)
+            continue
+
+        # ── Phase 3: Regen scrollen ──
+        hat_clear(hat)
+        time.sleep(0.5)
+        regen_label = "Regen Ja" if w['regen'] else "Regen Nein"
+        regen_color = (60, 60, 200) if w['regen'] else (160, 80, 200)
+        hat_scroll(hat, f"  {regen_label}  ", color=regen_color)
+
+        if not display_active():
+            hat_clear(hat)
+            continue
+
+        # ── Phase 4: Sonne scrollen ──
+        hat_clear(hat)
+        time.sleep(0.5)
+        sonne_label = "Sonne Ja" if w['sonne'] else "Sonne Nein"
+        sonne_color = (220, 40, 80) if w['sonne'] else (160, 80, 200)
+        hat_scroll(hat, f"  {sonne_label}  ", color=sonne_color)
+
+        # ── Zyklus-Ende ──
+        if cycles_remaining > 0:
+            cycles_remaining -= 1
+            if cycles_remaining == 0:
+                hat_clear(hat)
+                print("10 Zyklen abgeschlossen – Display AUS")
+
+        time.sleep(1)
 
 
 if __name__ == "__main__":
