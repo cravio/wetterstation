@@ -597,11 +597,13 @@ def main():
             a_click_timer[0].start()
 
     def on_button_b():
-        nonlocal cycles_remaining, button_override, greeting_requested
+        nonlocal cycles_remaining, button_override, greeting_requested, info_requested
         interrupt.set()
         cycles_remaining = 0
         button_override = True
         greeting_requested = False
+        info_requested = False
+        hat_reset(hat)
         log.info("Button B → Display AUS")
 
     info_requested = False
