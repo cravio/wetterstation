@@ -230,10 +230,11 @@ def main() -> None:
             display.show()
             time.sleep(0.01)
 
+            completed = False
             with weather_lock:
                 w = weather_holder[0]
             if w:
-                greeting_sequence(
+                completed = greeting_sequence(
                     display, w,
                     greeting_text=cfg.greeting_text,
                     speed=cfg.display.scroll_speed,
@@ -242,7 +243,8 @@ def main() -> None:
             display.clear()
             display.show()
             time.sleep(0.01)
-            sm.send_event(DisplayEvent.GREETING_COMPLETE)
+            if completed or not w:
+                sm.send_event(DisplayEvent.GREETING_COMPLETE)
             continue
 
         # ── INFO ──
@@ -255,7 +257,7 @@ def main() -> None:
                 w = weather_holder[0]
             last_fetch = w.last_fetch if w else 0
 
-            info_display(
+            completed = info_display(
                 display,
                 location=cfg.location.name,
                 last_fetch=last_fetch,
@@ -265,7 +267,8 @@ def main() -> None:
             display.clear()
             display.show()
             time.sleep(0.01)
-            sm.send_event(DisplayEvent.INFO_COMPLETE)
+            if completed:
+                sm.send_event(DisplayEvent.INFO_COMPLETE)
             continue
 
         # ── IDLE ──
