@@ -5,7 +5,7 @@
 ║   Raspberry Pi Hardware-Version                          ║
 ║   Voraussetzung: pip3 install unicornhatmini requests    ║
 ║                  pip3 install gpiozero                   ║
-║   Starten: python3 wetter_unicornhatmini.py              ║
+║   Starten: python3 wetter_unicornhatmini.py [--start]    ║
 ║                                                          ║
 ║   Button A = Display starten (10 Zyklen)                 ║
 ║   Button B = Display sofort stoppen                      ║
@@ -26,7 +26,7 @@ import threading
 import requests
 from datetime import datetime, date
 from unicornhatmini import UnicornHATMini
-from gpiozero import Button
+import RPi.GPIO as GPIO
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -70,7 +70,7 @@ LOCATION_NAME = _location.get("name", "Zuerich")
 
 GREETING_TEMPLATE = cfg.get(
     "greeting_text",
-    "Hallo Carla, hallo Maura, heute wird es {t_max}°C warm. Tschuss!"
+    "Hallo Carla, hallo Maura, heute wird es {t_max}°C warm"
 )
 
 _autostart = cfg.get("autostart", {})
@@ -99,68 +99,71 @@ HRT = _c("heart",   (255,  20,  80))
 DISPLAY_W = 17
 DISPLAY_H =  7
 
+# ── Interrupt-Event (wird bei jedem Button-Druck gesetzt) ─────────────────────
+interrupt = threading.Event()
+
 # ── Icons ────────────────────────────────────────────────────────────────────
 ICON_SUN = [
-    [OFF, OFF, SUN, OFF, OFF],
+    [SUN, OFF, SUN, OFF, SUN],
     [OFF, SUN, SUN, SUN, OFF],
     [SUN, SUN, SUN, SUN, SUN],
     [OFF, SUN, SUN, SUN, OFF],
-    [OFF, OFF, SUN, OFF, OFF],
+    [SUN, OFF, SUN, OFF, SUN],
 ]
 ICON_CLOUD = [
-    [OFF, CLO, CLO, OFF, OFF],
-    [CLO, CLO, CLO, CLO, OFF],
-    [CLO, CLO, CLO, CLO, CLO],
-    [CLO, CLO, CLO, CLO, CLO],
+    [OFF, OFF, CLO, OFF, OFF],
     [OFF, CLO, CLO, CLO, OFF],
+    [CLO, CLO, CLO, CLO, CLO],
+    [CLO, CLO, CLO, CLO, CLO],
+    [OFF, OFF, OFF, OFF, OFF],
 ]
 ICON_PARTLY = [
-    [OFF, SUN, SUN, OFF, OFF],
-    [SUN, ORG, ORG, CLO, OFF],
-    [SUN, ORG, CLO, CLO, CLO],
+    [OFF, OFF, SUN, OFF, OFF],
+    [OFF, SUN, CLO, CLO, OFF],
+    [SUN, CLO, CLO, CLO, CLO],
     [OFF, CLO, CLO, CLO, CLO],
-    [OFF, OFF, CLO, CLO, OFF],
+    [OFF, OFF, OFF, OFF, OFF],
 ]
 ICON_RAIN = [
     [OFF, CLO, CLO, CLO, OFF],
     [CLO, CLO, CLO, CLO, CLO],
+    [OFF, OFF, OFF, OFF, OFF],
     [RAI, OFF, RAI, OFF, RAI],
     [OFF, RAI, OFF, RAI, OFF],
-    [RAI, OFF, RAI, OFF, RAI],
 ]
 ICON_DRIZZLE = [
     [OFF, CLO, CLO, CLO, OFF],
     [CLO, CLO, CLO, CLO, CLO],
-    [STR, OFF, STR, OFF, STR],
+    [OFF, OFF, OFF, OFF, OFF],
     [OFF, STR, OFF, STR, OFF],
     [OFF, OFF, OFF, OFF, OFF],
 ]
 ICON_SNOW = [
-    [OFF, SNO, OFF, SNO, OFF],
-    [SNO, OFF, SNO, OFF, SNO],
-    [OFF, SNO, SNO, SNO, OFF],
+    [OFF, CLO, CLO, CLO, OFF],
+    [CLO, CLO, CLO, CLO, CLO],
+    [OFF, OFF, OFF, OFF, OFF],
     [SNO, OFF, SNO, OFF, SNO],
     [OFF, SNO, OFF, SNO, OFF],
 ]
 ICON_THUNDER = [
     [OFF, CLO, CLO, CLO, OFF],
     [CLO, CLO, CLO, CLO, CLO],
-    [OFF, OFF, THU, OFF, OFF],
-    [OFF, THU, OFF, OFF, OFF],
-    [OFF, OFF, THU, OFF, OFF],
+    [OFF, OFF, THU, THU, OFF],
+    [OFF, THU, THU, OFF, OFF],
+    [OFF, OFF, OFF, THU, OFF],
 ]
 ICON_NIGHT = [
     [OFF, OFF, SUN, SUN, OFF],
-    [OFF, SUN, OFF, SUN, OFF],
-    [SUN, OFF, OFF, SUN, OFF],
-    [OFF, SUN, OFF, SUN, OFF],
+    [OFF, SUN, OFF, OFF, OFF],
+    [OFF, SUN, OFF, OFF, OFF],
+    [OFF, SUN, OFF, OFF, OFF],
     [OFF, OFF, SUN, SUN, OFF],
 ]
 ICON_FOG = [
-    [CLO, CLO, CLO, CLO, CLO],
     [OFF, OFF, OFF, OFF, OFF],
     [CLO, CLO, CLO, CLO, CLO],
     [OFF, OFF, OFF, OFF, OFF],
+    [OFF, CLO, CLO, CLO, OFF],
     [CLO, CLO, CLO, CLO, CLO],
 ]
 ICON_HEART = [
@@ -194,10 +197,10 @@ def wmo_to_icon(code, hour):
 # ── Font ─────────────────────────────────────────────────────────────────────
 FONT = {
     '0': ['0110','1001','1001','1001','0110'],
-    '1': ['0010','0110','0010','0010','0111'],
+    '1': ['0100','1100','0100','0100','1110'],
     '2': ['0110','1001','0010','0100','1111'],
     '3': ['1110','0001','0110','0001','1110'],
-    '4': ['1001','1001','1111','0001','0001'],
+    '4': ['1010','1010','1111','0010','0010'],
     '5': ['1111','1000','1110','0001','1110'],
     '6': ['0110','1000','1110','1001','0110'],
     '7': ['1111','0001','0010','0100','0100'],
@@ -210,31 +213,34 @@ FONT = {
     ' ': ['0000','0000','0000','0000','0000'],
     '°': ['0110','0110','0000','0000','0000'],
     'A': ['0110','1001','1111','1001','1001'],
-    'C': ['0111','1000','1000','1000','0111'],
+    'C': ['0110','1000','1000','1000','0110'],
     'G': ['0110','1000','1011','1001','0110'],
     'H': ['1001','1001','1111','1001','1001'],
-    'J': ['0001','0001','0001','1001','0110'],
+    'J': ['0011','0001','0001','1001','0110'],
     'K': ['1001','1010','1100','1010','1001'],
-    'M': ['1001','1111','1001','1001','1001'],
+    'M': ['1001','1111','1111','1001','1001'],
     'N': ['1001','1101','1011','1001','1001'],
-    'R': ['1110','1001','1110','1100','1010'],
+    'R': ['1110','1001','1110','1010','1001'],
+    'S': ['0110','1000','0110','0001','0110'],
     'T': ['1110','0100','0100','0100','0100'],
     'W': ['1001','1001','1001','1111','0110'],
-    'a': ['0000','0110','1010','1110','1001'],
+    'a': ['0000','0110','0010','1010','0111'],
     'd': ['0001','0001','0111','1001','0111'],
-    'e': ['0000','0110','1110','1000','0110'],
-    'g': ['0000','0111','1010','0111','0001'],
+    'e': ['0000','0110','1111','1000','0110'],
+    'g': ['0000','0111','1001','0111','0110'],
+    'c': ['0000','0110','1000','1000','0110'],
     'h': ['1000','1000','1110','1001','1001'],
-    'i': ['0110','0000','0110','0110','0110'],
-    'l': ['0110','0010','0010','0010','0111'],
-    'n': ['0000','1100','1010','1010','1010'],
+    'i': ['0100','0000','0100','0100','0100'],
+    'l': ['1100','0100','0100','0100','1110'],
+    'm': ['0000','1111','1001','1001','1001'],
+    'n': ['0000','1110','1001','1001','1001'],
     'o': ['0000','0110','1001','1001','0110'],
     'r': ['0000','1011','1100','1000','1000'],
     's': ['0000','0110','1100','0011','1110'],
     't': ['0100','1110','0100','0100','0011'],
     'u': ['0000','1001','1001','1001','0110'],
     'w': ['0000','1001','1001','1111','0110'],
-    'x': ['0000','1010','0100','1010','0000'],
+    'x': ['0000','1001','0110','0110','1001'],
 }
 
 def text_to_columns(text, fg=(255, 200, 0)):
@@ -286,7 +292,18 @@ def fetch_weather(max_retries=3):
 def dominant_code(codes, times, hour_range):
     vals = [codes[i] for i, t in enumerate(times)
             if 'T' in t and int(t.split('T')[1][:2]) in hour_range]
-    return max(set(vals), key=vals.count) if vals else 0
+    if not vals:
+        return 0
+    code_set = set(vals)
+    has_sun   = bool(code_set & {0, 1})
+    has_cloud = bool(code_set & {2, 3})
+    if has_sun and has_cloud:
+        sun_count   = sum(1 for v in vals if v in (0, 1))
+        cloud_count = sum(1 for v in vals if v in (2, 3))
+        total = sun_count + cloud_count
+        if total > 0 and min(sun_count, cloud_count) / total >= 0.3:
+            return 2
+    return max(set(vals), key=vals.count)
 
 def parse_weather(data):
     times = data['hourly']['time']
@@ -294,35 +311,84 @@ def parse_weather(data):
     t_max = round(data['daily']['temperature_2m_max'][0], 1)
     t_min = round(data['daily']['temperature_2m_min'][0], 1)
 
+    now_hour = datetime.now().hour
+
     RAIN_CODES = {51,53,55,56,57,61,63,65,66,67,80,81,82,95,96,99}
+    SUN_CODES  = {0, 1}
+
     regen = any(
         codes[i] in RAIN_CODES
         for i, t in enumerate(times)
-        if 'T' in t and 6 <= int(t.split('T')[1][:2]) <= 22
+        if 'T' in t and int(t.split('T')[1][:2]) >= now_hour
     )
+    sonne = any(
+        codes[i] in SUN_CODES
+        for i, t in enumerate(times)
+        if 'T' in t and int(t.split('T')[1][:2]) >= now_hour
+    )
+
     return {
         'morning': wmo_to_icon(dominant_code(codes, times, range(6,  12)), 9),
         'midday':  wmo_to_icon(dominant_code(codes, times, range(12, 17)), 14),
         'evening': wmo_to_icon(dominant_code(codes, times, range(17, 22)), 19),
-        't_max': t_max, 't_min': t_min, 'regen': regen,
+        't_max': t_max, 't_min': t_min, 'regen': regen, 'sonne': sonne,
     }
 
 # ── HAT-Hilfsfunktionen ─────────────────────────────────────────────────────
-def hat_clear(hat):
+def patch_hat_spi(hat):
+    """Pi 5 SPI-Fix: xfer-Pacing (1ms) + Double-Show für beide Hälften."""
+    original_xfer = hat.xfer
+    original_show = hat.show
+    last_xfer = [0.0]
+
+    def paced_xfer(device, pin, command):
+        elapsed = time.monotonic() - last_xfer[0]
+        if elapsed < 0.001:
+            time.sleep(0.001 - elapsed)
+        original_xfer(device, pin, command)
+        last_xfer[0] = time.monotonic()
+
+    def stable_show():
+        original_show()
+        time.sleep(0.002)
+        original_show()
+
+    hat.xfer = paced_xfer
+    hat.show = stable_show
+
+def hat_reset(hat):
+    """Kompletter Display-Reset."""
     hat.clear()
     hat.show()
+    time.sleep(0.01)
 
 def hat_set_icon(hat, icon, x_offset):
     for row_i, row in enumerate(icon):
         for col_i, color in enumerate(row):
             hat.set_pixel(x_offset + col_i, 1 + row_i, *color)
 
+# ── Interruptible Helpers ────────────────────────────────────────────────────
+def isleep(secs):
+    """Schläft, bricht aber sofort ab wenn interrupt gesetzt wird.
+    Returns True wenn komplett durchgeschlafen, False wenn unterbrochen."""
+    end = time.monotonic() + secs
+    while time.monotonic() < end:
+        if interrupt.is_set():
+            return False
+        time.sleep(0.02)
+    return True
+
 def hat_scroll(hat, text, color=(255, 200, 0), speed=None):
+    """Scrollt Text über das Display.
+    Bricht sofort ab wenn interrupt gesetzt wird.
+    Returns True wenn komplett, False wenn unterbrochen."""
     if speed is None:
         speed = SCROLL_SPEED
     columns = text_to_columns(text, fg=color)
     padded  = [[OFF] * DISPLAY_H] * DISPLAY_W + columns + [[OFF] * DISPLAY_H] * DISPLAY_W
     for start in range(len(padded) - DISPLAY_W + 1):
+        if interrupt.is_set():
+            return False
         hat.clear()
         for x in range(DISPLAY_W):
             for y in range(DISPLAY_H):
@@ -330,6 +396,58 @@ def hat_scroll(hat, text, color=(255, 200, 0), speed=None):
                 hat.set_pixel(x, y, r, g, b)
         hat.show()
         time.sleep(speed)
+    return True
+
+# ── Gruss-Sequenz (Button Y) ────────────────────────────────────────────────
+def greeting_sequence(hat, weather_data, lock):
+    """3x Herz blinken → Gruss scrollen → Wetter-Icon.
+    Komplett interruptible – bricht bei jedem Button-Druck sofort ab.
+    Caller macht hat_reset() vor und nach dem Aufruf."""
+    with lock:
+        w = weather_data.copy() if weather_data else None
+
+    if not w:
+        log.warning("Gruss: Keine Wetterdaten vorhanden.")
+        return
+
+    # 1) Herz 3x blinken (zentriert bei x=6)
+    log.info("  [Gruss] Herz")
+    for _ in range(3):
+        if interrupt.is_set():
+            return
+        hat.clear()
+        hat_set_icon(hat, ICON_HEART, 6)
+        hat.show()
+        if not isleep(0.6):
+            return
+        hat.clear()
+        hat.show()
+        if not isleep(0.3):
+            return
+
+    # 2) Gruss-Text scrollen
+    if interrupt.is_set():
+        return
+    t_max = format_temp(w['t_max'])
+    text = f"  {GREETING_TEMPLATE.format(t_max=t_max)}"
+    if w['regen']:
+        text += " und es regnet"
+    if w['sonne']:
+        text += " und es scheint die Sonne"
+    text += ". Tschuss!  "
+    log.info("  [Gruss] Text scrollen")
+    if not hat_scroll(hat, text, color=(255, 20, 80), speed=SCROLL_SPEED):
+        return
+
+    # 3) Wetter-Icon anzeigen
+    if interrupt.is_set():
+        return
+    hat.clear()
+    icon = ICON_CLOUD if w['regen'] else ICON_SUN
+    hat_set_icon(hat, icon, 6)
+    hat.show()
+    log.info("  [Gruss] Wetter-Icon")
+    isleep(4)
 
 # ── Fehler-Blink ─────────────────────────────────────────────────────────────
 def error_blink(hat):
@@ -340,40 +458,8 @@ def error_blink(hat):
                 hat.set_pixel(x, y, 120, 0, 0)
         hat.show()
         time.sleep(0.3)
-        hat_clear(hat)
+        hat_reset(hat)
         time.sleep(0.3)
-
-# ── Gruss-Sequenz (Button Y) ────────────────────────────────────────────────
-def greeting_sequence(hat, weather_data, lock):
-    """3x Herz blinken → Gruss scrollen → Wetter-Icon anzeigen."""
-    with lock:
-        w = weather_data.copy() if weather_data else None
-
-    if not w:
-        log.warning("Gruss: Keine Wetterdaten vorhanden.")
-        return
-
-    # 1) Herz 3x blinken (zentriert bei x=6)
-    for _ in range(3):
-        hat.clear()
-        hat_set_icon(hat, ICON_HEART, 6)
-        hat.show()
-        time.sleep(0.6)
-        hat_clear(hat)
-        time.sleep(0.3)
-
-    # 2) Gruss-Text scrollen
-    t_max = format_temp(w['t_max'])
-    text = f"  {GREETING_TEMPLATE.format(t_max=t_max)}  "
-    hat_scroll(hat, text, color=(255, 20, 80), speed=SCROLL_SPEED)
-
-    # 3) Wetter-Icon anzeigen: Wolke bei Regen, Sonne bei kein Regen
-    hat.clear()
-    icon = ICON_CLOUD if w['regen'] else ICON_SUN
-    hat_set_icon(hat, icon, 6)
-    hat.show()
-    time.sleep(4)
-    hat_clear(hat)
 
 # ── Background Fetch Thread ─────────────────────────────────────────────────
 def weather_fetch_loop(weather_data, lock, stop_event):
@@ -388,11 +474,12 @@ def weather_fetch_loop(weather_data, lock, stop_event):
                 weather_data['_last_fetch'] = time.time()
                 weather_data['_stale'] = False
             regen_str = "Ja" if parsed['regen'] else "Nein"
+            sonne_str = "Ja" if parsed['sonne'] else "Nein"
             log.info(
-                "Min %s°C / Max %s°C | Regen: %s",
+                "Min %s°C / Max %s°C | Regen: %s | Sonne: %s",
                 format_temp(parsed['t_min']),
                 format_temp(parsed['t_max']),
-                regen_str,
+                regen_str, sonne_str,
             )
         except Exception as e:
             log.error("Wetterdaten-Abruf fehlgeschlagen: %s", e)
@@ -433,56 +520,76 @@ def autostart_scheduler(activate_callback, stop_event):
 # ── Hauptprogramm ───────────────────────────────────────────────────────────
 def main():
     hat = UnicornHATMini()
+    patch_hat_spi(hat)
     hat.set_brightness(BRIGHTNESS)
-    hat_clear(hat)
+    hat_reset(hat)
 
     # Shared State
     weather_data = {}
     lock = threading.Lock()
     cycles_remaining = 0
-    stop_event = threading.Event()
+    if '--start' in sys.argv:
+        cycles_remaining = DISPLAY_CYCLES
+        log.info("--start → Display AN (%d Zyklen)", DISPLAY_CYCLES)
+    fetch_stop = threading.Event()
+    button_override = False
+    auto_started = False
+    greeting_requested = False
 
     # ── Background-Fetch starten ──
     fetch_thread = threading.Thread(
         target=weather_fetch_loop,
-        args=(weather_data, lock, stop_event),
+        args=(weather_data, lock, fetch_stop),
         daemon=True,
     )
     fetch_thread.start()
 
-    # ── Buttons ──
-    button_a = Button(5)
-    button_b = Button(6)
-    button_x = Button(16)
-    button_y = Button(24)
+    # ── Buttons (RPi.GPIO, gleicher Handle wie UnicornHATMini, nur Polling) ──
+    BUTTON_A = 5
+    BUTTON_B = 6
+    BUTTON_X = 16
+    BUTTON_Y = 24
+    ALL_BUTTONS = (BUTTON_A, BUTTON_B, BUTTON_X, BUTTON_Y)
 
-    def on_button_a():
-        nonlocal cycles_remaining
-        cycles_remaining = DISPLAY_CYCLES
-        log.info("Button A → Display AN (%d Zyklen)", DISPLAY_CYCLES)
+    for pin in ALL_BUTTONS:
+        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-    def on_button_b():
-        nonlocal cycles_remaining
-        cycles_remaining = 0
-        hat_clear(hat)
-        log.info("Button B → Display AUS")
+    def on_button(channel):
+        nonlocal cycles_remaining, button_override, greeting_requested
+        interrupt.set()
 
-    def on_button_x():
-        nonlocal cycles_remaining
-        cycles_remaining = CONTINUOUS
-        log.info("Button X → Dauerbetrieb")
+        if channel == BUTTON_A:
+            cycles_remaining = DISPLAY_CYCLES
+            button_override = True
+            greeting_requested = False
+            log.info("Button A → Display AN (%d Zyklen)", DISPLAY_CYCLES)
+        elif channel == BUTTON_B:
+            cycles_remaining = 0
+            button_override = True
+            greeting_requested = False
+            log.info("Button B → Display AUS")
+        elif channel == BUTTON_X:
+            cycles_remaining = CONTINUOUS
+            button_override = True
+            greeting_requested = False
+            log.info("Button X → Dauerbetrieb")
+        elif channel == BUTTON_Y:
+            cycles_remaining = 0
+            greeting_requested = True
+            log.info("Button Y → Gruss")
 
-    def on_button_y():
-        threading.Thread(
-            target=greeting_sequence,
-            args=(hat, weather_data, lock),
-            daemon=True,
-        ).start()
+    def button_poll_loop():
+        """Pollt Button-States alle 50ms."""
+        prev = {pin: 1 for pin in ALL_BUTTONS}
+        while True:
+            for pin in ALL_BUTTONS:
+                state = GPIO.input(pin)
+                if state == 0 and prev[pin] == 1:
+                    on_button(pin)
+                prev[pin] = state
+            time.sleep(0.05)
 
-    button_a.when_pressed = on_button_a
-    button_b.when_pressed = on_button_b
-    button_x.when_pressed = on_button_x
-    button_y.when_pressed = on_button_y
+    threading.Thread(target=button_poll_loop, daemon=True).start()
 
     # ── Terminal-Eingaben ──
     def stdin_loop():
@@ -490,26 +597,27 @@ def main():
         for line in sys.stdin:
             cmd = line.strip().lower()
             if cmd == 'r':
-                on_button_b()
+                on_button(BUTTON_B)
                 log.info("Terminal → Reset")
             elif cmd == 'a':
-                on_button_a()
+                on_button(BUTTON_A)
             elif cmd == 'x':
-                on_button_x()
+                on_button(BUTTON_X)
             elif cmd == 'y':
-                on_button_y()
+                on_button(BUTTON_Y)
 
     threading.Thread(target=stdin_loop, daemon=True).start()
 
     # ── Autostart-Scheduler starten ──
     if AUTOSTART_ENABLED:
         def activate_continuous():
-            nonlocal cycles_remaining
+            nonlocal cycles_remaining, button_override
             cycles_remaining = CONTINUOUS
+            button_override = False
 
         scheduler_thread = threading.Thread(
             target=autostart_scheduler,
-            args=(activate_continuous, stop_event),
+            args=(activate_continuous, fetch_stop),
             daemon=True,
         )
         scheduler_thread.start()
@@ -530,63 +638,90 @@ def main():
 
     # ── Main Loop ──
     while True:
-        if cycles_remaining != 0:
-            with lock:
-                w = weather_data.copy()
+        # Interrupt zurücksetzen – bereit für neuen Button-Druck
+        interrupt.clear()
 
-            # Icons anzeigen
-            hat.clear()
-            for icon, x_off in [
-                (w['morning'], 0),
-                (w['midday'],  6),
-                (w['evening'], 12),
-            ]:
-                hat_set_icon(hat, icon, x_off)
+        # Gruss-Sequenz hat Priorität
+        if greeting_requested:
+            greeting_requested = False
+            hat_reset(hat)
+            greeting_sequence(hat, weather_data, lock)
+            hat_reset(hat)
+            continue
 
-            # Stale-Indikator: roter Punkt oben rechts
-            if w.get('_stale'):
-                hat.set_pixel(16, 0, 120, 0, 0)
+        # Idle: Display aus, kurz schlafen
+        if cycles_remaining == 0:
+            isleep(0.1)
+            continue
 
-            hat.show()
+        # ── Sauberer Start für neuen Zyklus ──
+        hat_reset(hat)
 
-            # Interruptible sleep für Icon-Anzeige
-            for _ in range(int(ICON_SHOW_TIME / 0.2)):
-                if cycles_remaining == 0:
-                    break
-                time.sleep(0.2)
+        # ── Wetterdaten für diesen Zyklus holen ──
+        with lock:
+            w = weather_data.copy()
 
+        # ── Phase 1: Icons (5 Sekunden) ──
+        hat.clear()
+        for icon, x_off in [
+            (w['morning'], 0),
+            (w['midday'],  6),
+            (w['evening'], 12),
+        ]:
+            hat_set_icon(hat, icon, x_off)
+
+        # Stale-Indikator: roter Punkt oben rechts
+        if w.get('_stale'):
+            hat.set_pixel(16, 0, 120, 0, 0)
+
+        hat.show()
+        log.info("  [Phase 1] Icons")
+
+        if not isleep(ICON_SHOW_TIME):
+            log.info("  [Phase 1] UNTERBROCHEN")
+            continue
+
+        # ── Phase 2: Temperatur scrollen ──
+        temp_text = (f"  Min {format_temp(w['t_min'])}°C  "
+                     f"Max {format_temp(w['t_max'])}°C  ")
+        log.info("  [Phase 2] Temperatur")
+        if not hat_scroll(hat, temp_text, color=(220, 40, 80)):
+            log.info("  [Phase 2] UNTERBROCHEN")
+            continue
+
+        if not isleep(0.5):
+            continue
+
+        # ── Phase 3: Regen scrollen ──
+        regen_label = "Regen Ja" if w['regen'] else "Regen Nein"
+        regen_color = (60, 60, 200) if w['regen'] else (160, 80, 200)
+        log.info("  [Phase 3] %s", regen_label)
+        if not hat_scroll(hat, f"  {regen_label}  ", color=regen_color):
+            log.info("  [Phase 3] UNTERBROCHEN")
+            continue
+
+        if not isleep(0.5):
+            continue
+
+        # ── Phase 4: Sonne scrollen ──
+        sonne_label = "Sonne Ja" if w['sonne'] else "Sonne Nein"
+        sonne_color = (220, 40, 80) if w['sonne'] else (160, 80, 200)
+        log.info("  [Phase 4] %s", sonne_label)
+        if not hat_scroll(hat, f"  {sonne_label}  ", color=sonne_color):
+            log.info("  [Phase 4] UNTERBROCHEN")
+            continue
+
+        log.info("  [Zyklus komplett]")
+
+        # ── Zyklus-Ende ──
+        if cycles_remaining > 0:
+            cycles_remaining -= 1
             if cycles_remaining == 0:
-                hat_clear(hat)
-                continue
+                log.info("%d Zyklen abgeschlossen – Display AUS", DISPLAY_CYCLES)
 
-            # Temperatur scrollen
-            hat_scroll(hat,
-                       f"  Min {format_temp(w['t_min'])}°C  "
-                       f"Max {format_temp(w['t_max'])}°C  ",
-                       color=(220, 40, 80))
-
-            if cycles_remaining == 0:
-                hat_clear(hat)
-                continue
-
-            time.sleep(1)
-
-            # Regen scrollen
-            regen_label = "Regen Ja" if w['regen'] else "Regen Nein"
-            regen_color = (60, 60, 200) if w['regen'] else (160, 80, 200)
-            hat_scroll(hat, f"  {regen_label}  ", color=regen_color)
-
-            # Zyklus runterzählen (nur wenn nicht Dauerbetrieb)
-            if cycles_remaining > 0:
-                cycles_remaining -= 1
-                if cycles_remaining == 0:
-                    hat_clear(hat)
-                    log.info("%d Zyklen abgeschlossen – Display AUS", DISPLAY_CYCLES)
-
-            time.sleep(1)
-        else:
-            # Display aus – idle, wenig CPU
-            time.sleep(0.2)
+        # Display zwischen Zyklen zurücksetzen
+        hat_reset(hat)
+        isleep(1)
 
 
 if __name__ == "__main__":
