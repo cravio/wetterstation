@@ -1,12 +1,13 @@
-"""Input handling: hardware buttons and terminal commands.
+"""Input handling: hardware buttons, terminal commands, and FIFO remote control.
 
-Both handlers push DisplayEvents into the StateMachine queue.
-Neither touches the display directly – that's the main thread's job.
+All handlers push DisplayEvents into the StateMachine queue.
+None of them touches the display directly – that's the main thread's job.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import time
 import threading
@@ -18,6 +19,33 @@ if TYPE_CHECKING:
     from wetterstation.state import StateMachine
 
 log = logging.getLogger("wetterstation")
+
+
+def dispatch_command(
+    cmd: str,
+    sm: StateMachine,
+    display_cycles: int,
+    source: str = "Terminal",
+) -> None:
+    """Dispatch a text command to the state machine.
+
+    Shared by TerminalInput and FifoInput.
+    """
+    if cmd in ("r", "b"):
+        sm.send_event(DisplayEvent.STOP)
+        log.info("%s → Stop", source)
+    elif cmd == "aa":
+        sm.send_event(DisplayEvent.START_CONTINUOUS)
+        log.info("%s → Dauerbetrieb", source)
+    elif cmd == "a":
+        sm.send_event(DisplayEvent.START, cycles=display_cycles)
+        log.info("%s → %d Zyklen", source, display_cycles)
+    elif cmd == "x":
+        sm.send_event(DisplayEvent.SHOW_INFO)
+        log.info("%s → Info", source)
+    elif cmd == "y":
+        sm.send_event(DisplayEvent.SHOW_GREETING)
+        log.info("%s → Gruss", source)
 
 
 class ButtonHandler:
@@ -138,20 +166,55 @@ class TerminalInput:
         """Read commands from stdin."""
         for line in sys.stdin:
             cmd = line.strip().lower()
-            if cmd in ("r", "b"):
-                self._sm.send_event(DisplayEvent.STOP)
-                log.info("Terminal → Stop")
-            elif cmd == "aa":
-                self._sm.send_event(DisplayEvent.START_CONTINUOUS)
-                log.info("Terminal → Dauerbetrieb")
-            elif cmd == "a":
-                self._sm.send_event(
-                    DisplayEvent.START, cycles=self._display_cycles
-                )
-                log.info("Terminal → %d Zyklen", self._display_cycles)
-            elif cmd == "x":
-                self._sm.send_event(DisplayEvent.SHOW_INFO)
-                log.info("Terminal → Info")
-            elif cmd == "y":
-                self._sm.send_event(DisplayEvent.SHOW_GREETING)
-                log.info("Terminal → Gruss")
+            dispatch_command(cmd, self._sm, self._display_cycles, "Terminal")
+
+
+class FifoInput:
+    """Named pipe (FIFO) command handler for remote control.
+
+    Allows sending commands when running as a systemd service (no stdin).
+
+    Usage from another terminal or SSH:
+        echo a > /tmp/wetterstation.cmd
+        echo b > /tmp/wetterstation.cmd
+
+    Commands: same as TerminalInput (a, aa, b/r, x, y).
+    """
+
+    FIFO_PATH = "/tmp/wetterstation.cmd"
+
+    def __init__(self, state_machine: StateMachine, display_cycles: int = 10) -> None:
+        self._sm = state_machine
+        self._display_cycles = display_cycles
+
+    def start(self) -> None:
+        """Create FIFO and start reading thread."""
+        thread = threading.Thread(target=self._read_loop, daemon=True)
+        thread.start()
+        log.info("FIFO-Input gestartet (%s)", self.FIFO_PATH)
+
+    def _read_loop(self) -> None:
+        """Read commands from named pipe (re-opens after each writer disconnects)."""
+        # Create FIFO (remove stale one first)
+        try:
+            if os.path.exists(self.FIFO_PATH):
+                os.remove(self.FIFO_PATH)
+            os.mkfifo(self.FIFO_PATH)
+            os.chmod(self.FIFO_PATH, 0o666)
+        except OSError as e:
+            log.error("FIFO erstellen fehlgeschlagen: %s", e)
+            return
+
+        while True:
+            try:
+                # open() blocks until a writer connects
+                with open(self.FIFO_PATH, "r") as fifo:
+                    for line in fifo:
+                        cmd = line.strip().lower()
+                        if cmd:
+                            dispatch_command(
+                                cmd, self._sm, self._display_cycles, "FIFO"
+                            )
+            except OSError as e:
+                log.warning("FIFO Lesefehler: %s", e)
+                time.sleep(1)

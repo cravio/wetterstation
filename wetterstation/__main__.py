@@ -161,10 +161,14 @@ def main() -> None:
             log.warning("RPi.GPIO nicht verfügbar – keine Hardware-Buttons")
 
     # ── Terminal Input ──
-    from wetterstation.input import TerminalInput
+    from wetterstation.input import FifoInput, TerminalInput
 
     terminal = TerminalInput(sm, cfg.display.display_cycles)
     terminal.start()
+
+    # ── FIFO Remote Control ──
+    fifo = FifoInput(sm, cfg.display.display_cycles)
+    fifo.start()
 
     # ── Autostart Scheduler ──
     if cfg.autostart.enabled:
