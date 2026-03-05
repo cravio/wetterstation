@@ -80,12 +80,25 @@ class StateMachine:
         """Clear the needs_clear flag (call from main thread after clearing display)."""
         self._needs_clear = False
 
+    # Events that should immediately interrupt running animations.
+    _INTERRUPTING_EVENTS = frozenset({
+        DisplayEvent.START,
+        DisplayEvent.START_CONTINUOUS,
+        DisplayEvent.STOP,
+        DisplayEvent.SHOW_GREETING,
+        DisplayEvent.SHOW_INFO,
+        DisplayEvent.AUTOSTART,
+    })
+
     def send_event(self, event: DisplayEvent, **kwargs: Any) -> None:
         """Thread-safe: push an event into the queue.
 
         Can be called from any thread (button handler, terminal, scheduler).
+        For interrupting events, immediately signals running animations to abort.
         """
         self._event_queue.put((event, kwargs))
+        if event in self._INTERRUPTING_EVENTS and self._interrupt_event is not None:
+            self._interrupt_event.set()
 
     def process_events(self) -> DisplayState:
         """Process all pending events. Must be called from main thread only.
