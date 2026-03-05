@@ -46,11 +46,12 @@ class StateMachine:
     The main thread calls process_events() to handle transitions.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, interrupt: Any = None) -> None:
         self._state = DisplayState.IDLE
         self._cycles_remaining = 0
         self._interrupted = False
         self._needs_clear = False
+        self._interrupt_event = interrupt  # threading.Event to abort animations
         self._event_queue: queue.Queue[tuple[DisplayEvent, dict[str, Any]]] = (
             queue.Queue()
         )
@@ -101,6 +102,12 @@ class StateMachine:
 
         return self._state
 
+    def _set_interrupted(self) -> None:
+        """Mark as interrupted and signal running animations to abort."""
+        self._interrupted = True
+        if self._interrupt_event is not None:
+            self._interrupt_event.set()
+
     def _handle_event(
         self, event: DisplayEvent, kwargs: dict[str, Any]
     ) -> None:
@@ -109,30 +116,30 @@ class StateMachine:
             cycles = kwargs.get("cycles", 10)
             self._state = DisplayState.RUNNING
             self._cycles_remaining = cycles
-            self._interrupted = True
+            self._set_interrupted()
             log.info("→ RUNNING (%d Zyklen)", cycles)
 
         elif event == DisplayEvent.START_CONTINUOUS:
             self._state = DisplayState.RUNNING
             self._cycles_remaining = CONTINUOUS
-            self._interrupted = True
+            self._set_interrupted()
             log.info("→ RUNNING (Dauerbetrieb)")
 
         elif event == DisplayEvent.STOP:
             self._state = DisplayState.IDLE
             self._cycles_remaining = 0
-            self._interrupted = True
+            self._set_interrupted()
             self._needs_clear = True
             log.info("→ IDLE (Stop)")
 
         elif event == DisplayEvent.SHOW_GREETING:
             self._state = DisplayState.GREETING
-            self._interrupted = True
+            self._set_interrupted()
             log.info("→ GREETING")
 
         elif event == DisplayEvent.SHOW_INFO:
             self._state = DisplayState.INFO
-            self._interrupted = True
+            self._set_interrupted()
             log.info("→ INFO")
 
         elif event == DisplayEvent.CYCLE_COMPLETE:
@@ -155,5 +162,5 @@ class StateMachine:
         elif event == DisplayEvent.AUTOSTART:
             self._state = DisplayState.RUNNING
             self._cycles_remaining = CONTINUOUS
-            self._interrupted = True
+            self._set_interrupted()
             log.info("→ RUNNING (Autostart)")

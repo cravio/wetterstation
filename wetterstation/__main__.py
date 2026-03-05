@@ -131,8 +131,8 @@ def main() -> None:
     display.show()
 
     # ── State Machine ──
-    sm = StateMachine()
     interrupt = threading.Event()
+    sm = StateMachine(interrupt=interrupt)
 
     if "--start" in sys.argv:
         sm.send_event(DisplayEvent.START, cycles=cfg.display.display_cycles)
