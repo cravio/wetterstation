@@ -1,0 +1,27 @@
+[project]
+name = "wetterstation"
+version = "2.0.0"
+description = "Raspberry Pi Wetterstation mit Pimoroni Unicorn HAT Mini (17x7 LED)"
+requires-python = ">=3.9"
+dependencies = [
+    "requests>=2.28",
+]
+
+[project.optional-dependencies]
+pi = [
+    "unicornhatmini>=0.0.4",
+    "RPi.GPIO>=0.7",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "responses>=0.23",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"

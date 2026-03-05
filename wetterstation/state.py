@@ -1,0 +1,159 @@
+"""State machine for display mode management.
+
+Thread-safe: send_event() can be called from any thread.
+process_events() must be called from the main thread only.
+"""
+
+from __future__ import annotations
+
+import logging
+import queue
+from enum import Enum, auto
+from typing import Any
+
+log = logging.getLogger("wetterstation")
+
+CONTINUOUS = -1
+
+
+class DisplayState(Enum):
+    """Display operating states."""
+
+    IDLE = auto()      # Display off, waiting for input
+    RUNNING = auto()   # Weather display cycle active
+    GREETING = auto()  # Showing greeting sequence
+    INFO = auto()      # Showing info (location + update time)
+
+
+class DisplayEvent(Enum):
+    """Events that trigger state transitions."""
+
+    START = auto()            # Start N cycles (kwargs: cycles=int)
+    START_CONTINUOUS = auto()  # Start continuous mode
+    STOP = auto()             # Stop display
+    SHOW_INFO = auto()        # Show info display
+    SHOW_GREETING = auto()    # Show greeting sequence
+    CYCLE_COMPLETE = auto()   # One display cycle completed
+    GREETING_COMPLETE = auto()  # Greeting sequence finished
+    INFO_COMPLETE = auto()    # Info display finished
+    AUTOSTART = auto()        # Scheduled autostart
+
+
+class StateMachine:
+    """Display state machine with thread-safe event queue.
+
+    Input threads push events via send_event().
+    The main thread calls process_events() to handle transitions.
+    """
+
+    def __init__(self) -> None:
+        self._state = DisplayState.IDLE
+        self._cycles_remaining = 0
+        self._interrupted = False
+        self._needs_clear = False
+        self._event_queue: queue.Queue[tuple[DisplayEvent, dict[str, Any]]] = (
+            queue.Queue()
+        )
+
+    @property
+    def state(self) -> DisplayState:
+        return self._state
+
+    @property
+    def cycles_remaining(self) -> int:
+        return self._cycles_remaining
+
+    @property
+    def interrupted(self) -> bool:
+        return self._interrupted
+
+    @property
+    def needs_clear(self) -> bool:
+        return self._needs_clear
+
+    def clear_interrupted(self) -> None:
+        """Clear the interrupted flag (call from main thread after handling)."""
+        self._interrupted = False
+
+    def clear_needs_clear(self) -> None:
+        """Clear the needs_clear flag (call from main thread after clearing display)."""
+        self._needs_clear = False
+
+    def send_event(self, event: DisplayEvent, **kwargs: Any) -> None:
+        """Thread-safe: push an event into the queue.
+
+        Can be called from any thread (button handler, terminal, scheduler).
+        """
+        self._event_queue.put((event, kwargs))
+
+    def process_events(self) -> DisplayState:
+        """Process all pending events. Must be called from main thread only.
+
+        Returns:
+            Current state after processing.
+        """
+        while True:
+            try:
+                event, kwargs = self._event_queue.get_nowait()
+            except queue.Empty:
+                break
+            self._handle_event(event, kwargs)
+
+        return self._state
+
+    def _handle_event(
+        self, event: DisplayEvent, kwargs: dict[str, Any]
+    ) -> None:
+        """Handle a single event and update state."""
+        if event == DisplayEvent.START:
+            cycles = kwargs.get("cycles", 10)
+            self._state = DisplayState.RUNNING
+            self._cycles_remaining = cycles
+            self._interrupted = True
+            log.info("→ RUNNING (%d Zyklen)", cycles)
+
+        elif event == DisplayEvent.START_CONTINUOUS:
+            self._state = DisplayState.RUNNING
+            self._cycles_remaining = CONTINUOUS
+            self._interrupted = True
+            log.info("→ RUNNING (Dauerbetrieb)")
+
+        elif event == DisplayEvent.STOP:
+            self._state = DisplayState.IDLE
+            self._cycles_remaining = 0
+            self._interrupted = True
+            self._needs_clear = True
+            log.info("→ IDLE (Stop)")
+
+        elif event == DisplayEvent.SHOW_GREETING:
+            self._state = DisplayState.GREETING
+            self._interrupted = True
+            log.info("→ GREETING")
+
+        elif event == DisplayEvent.SHOW_INFO:
+            self._state = DisplayState.INFO
+            self._interrupted = True
+            log.info("→ INFO")
+
+        elif event == DisplayEvent.CYCLE_COMPLETE:
+            if self._cycles_remaining == CONTINUOUS:
+                pass  # stay running, don't decrement
+            elif self._cycles_remaining > 0:
+                self._cycles_remaining -= 1
+                if self._cycles_remaining == 0:
+                    self._state = DisplayState.IDLE
+                    log.info("→ IDLE (alle Zyklen abgeschlossen)")
+
+        elif event == DisplayEvent.GREETING_COMPLETE:
+            self._state = DisplayState.IDLE
+            log.info("→ IDLE (Gruss fertig)")
+
+        elif event == DisplayEvent.INFO_COMPLETE:
+            self._state = DisplayState.IDLE
+            log.info("→ IDLE (Info fertig)")
+
+        elif event == DisplayEvent.AUTOSTART:
+            self._state = DisplayState.RUNNING
+            self._cycles_remaining = CONTINUOUS
+            self._interrupted = True
+            log.info("→ RUNNING (Autostart)")
