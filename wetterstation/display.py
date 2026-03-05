@@ -53,6 +53,7 @@ class UnicornHATBackend:
 
         self._hat = UnicornHATMini()
         self._patch_spi()
+        self.reset()
         log.info("UnicornHAT Mini initialisiert (Pi 5 SPI-Fix aktiv)")
 
     def _patch_spi(self) -> None:
@@ -70,7 +71,9 @@ class UnicornHATBackend:
 
         def stable_show():
             original_show()
-            time.sleep(0.002)
+            time.sleep(0.003)
+            original_show()
+            time.sleep(0.003)
             original_show()
 
         self._hat.xfer = paced_xfer
