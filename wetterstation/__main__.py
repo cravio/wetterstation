@@ -206,7 +206,6 @@ def main() -> None:
     # No other thread touches the display – ever.
     while True:
         # Process pending events from input threads
-        interrupt.clear()
         sm.process_events()
 
         # Handle needs_clear (from STOP event)
@@ -219,6 +218,9 @@ def main() -> None:
         # Handle interrupted (from any state change)
         if sm.interrupted:
             sm.clear_interrupted()
+
+        # Clear interrupt AFTER processing events so animations start fresh
+        interrupt.clear()
 
         state = sm.state
 
