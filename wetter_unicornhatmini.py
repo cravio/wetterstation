@@ -241,6 +241,13 @@ FONT = {
     'u': ['0000','1001','1001','1001','0110'],
     'w': ['0000','1001','1001','1111','0110'],
     'x': ['0000','1001','0110','0110','1001'],
+    'v': ['0000','1001','1001','0110','0110'],
+    'k': ['1000','1010','1100','1010','1001'],
+    'p': ['0000','1110','1001','1110','1000'],
+    'Z': ['1111','0001','0110','1000','1111'],
+    ':': ['0000','0100','0000','0100','0000'],
+    '(': ['0010','0100','0100','0100','0010'],
+    ')': ['0100','0010','0010','0010','0100'],
 }
 
 def text_to_columns(text, fg=(255, 200, 0)):
@@ -597,16 +604,17 @@ def main():
             a_click_timer[0].start()
 
     def on_button_b():
-        nonlocal cycles_remaining, button_override, greeting_requested, info_requested
+        nonlocal cycles_remaining, button_override, greeting_requested, info_requested, needs_clear
         interrupt.set()
         cycles_remaining = 0
         button_override = True
         greeting_requested = False
         info_requested = False
-        hat_reset(hat)
+        needs_clear = True
         log.info("Button B → Display AUS")
 
     info_requested = False
+    needs_clear = False
 
     def on_button_x():
         nonlocal info_requested
@@ -646,17 +654,17 @@ def main():
 
     # ── Terminal-Eingaben ──
     def stdin_loop():
-        """Terminal: a = 10 Zyklen, aa = Dauerbetrieb, b = Stop, x = Info, y = Gruss."""
+        """Terminal: r = Reset, a = 10 Zyklen, aa = Dauerbetrieb, b = Stop, x = Info, y = Gruss."""
         for line in sys.stdin:
             cmd = line.strip().lower()
-            if cmd == 'aa':
+            if cmd == 'r' or cmd == 'b':
+                on_button_b()
+            elif cmd == 'aa':
                 handle_a_double()
                 log.info("Terminal → Dauerbetrieb (aa)")
             elif cmd == 'a':
                 handle_a_single()
                 log.info("Terminal → %d Zyklen", DISPLAY_CYCLES)
-            elif cmd == 'b':
-                on_button_b()
             elif cmd == 'x':
                 on_button_x()
             elif cmd == 'y':
@@ -684,7 +692,7 @@ def main():
 
     log.info("Wetter-Display gestartet – %s", LOCATION_NAME)
     log.info("A = %d Zyklen | A+A = Dauerbetrieb | B = Stop | X = Info | Y = Gruss", DISPLAY_CYCLES)
-    log.info("Terminal: a = %d Zyklen | aa = Dauerbetrieb | b = Stop | x = Info | y = Gruss", DISPLAY_CYCLES)
+    log.info("Terminal: r/b = Reset | a = %d Zyklen | aa = Dauerbetrieb | x = Info | y = Gruss", DISPLAY_CYCLES)
     log.info("Warte auf erste Wetterdaten …")
 
     # Warte bis erste Daten da sind
@@ -696,6 +704,11 @@ def main():
     while True:
         # Interrupt zurücksetzen – bereit für neuen Button-Druck
         interrupt.clear()
+
+        # Display löschen (von Button B angefordert, hier im Main-Thread)
+        if needs_clear:
+            needs_clear = False
+            hat_reset(hat)
 
         # Gruss-Sequenz hat Priorität
         if greeting_requested:
