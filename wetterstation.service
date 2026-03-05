@@ -1,0 +1,17 @@
+[Unit]
+Description=Wetterstation Display
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/wetterstation
+ExecStart=/usr/bin/python3 /home/pi/wetterstation/wetter_unicornhatmini.py
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
