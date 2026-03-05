@@ -554,29 +554,80 @@ def main():
     for pin in ALL_BUTTONS:
         GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-    def on_button(channel):
+    # ── Button A Doppelklick-Erkennung ──
+    DOUBLE_CLICK_WINDOW = 3.0
+    last_a_press = [0.0]
+    a_click_timer = [None]
+
+    def handle_a_single():
+        """Wird nach Ablauf des Doppelklick-Fensters aufgerufen."""
         nonlocal cycles_remaining, button_override, greeting_requested
         interrupt.set()
+        cycles_remaining = DISPLAY_CYCLES
+        button_override = True
+        greeting_requested = False
+        log.info("Button A → Display AN (%d Zyklen)", DISPLAY_CYCLES)
 
+    def handle_a_double():
+        """Sofort bei Doppelklick."""
+        nonlocal cycles_remaining, button_override, greeting_requested
+        interrupt.set()
+        cycles_remaining = CONTINUOUS
+        button_override = True
+        greeting_requested = False
+        log.info("Button A Doppelklick → Dauerbetrieb")
+
+    def on_button_a():
+        now = time.monotonic()
+        elapsed = now - last_a_press[0]
+        last_a_press[0] = now
+
+        if elapsed <= DOUBLE_CLICK_WINDOW:
+            # Doppelklick: Timer abbrechen, Dauerbetrieb
+            if a_click_timer[0] is not None:
+                a_click_timer[0].cancel()
+                a_click_timer[0] = None
+            handle_a_double()
+        else:
+            # Erster Klick: Timer starten, warte auf möglichen zweiten
+            if a_click_timer[0] is not None:
+                a_click_timer[0].cancel()
+            a_click_timer[0] = threading.Timer(DOUBLE_CLICK_WINDOW, handle_a_single)
+            a_click_timer[0].daemon = True
+            a_click_timer[0].start()
+
+    def on_button_b():
+        nonlocal cycles_remaining, button_override, greeting_requested
+        interrupt.set()
+        cycles_remaining = 0
+        button_override = True
+        greeting_requested = False
+        log.info("Button B → Display AUS")
+
+    info_requested = False
+
+    def on_button_x():
+        nonlocal info_requested
+        interrupt.set()
+        info_requested = True
+        log.info("Button X → Info")
+
+    def on_button_y():
+        nonlocal cycles_remaining, greeting_requested
+        interrupt.set()
+        cycles_remaining = 0
+        greeting_requested = True
+        log.info("Button Y → Gruss")
+
+    def on_button(channel):
         if channel == BUTTON_A:
-            cycles_remaining = DISPLAY_CYCLES
-            button_override = True
-            greeting_requested = False
-            log.info("Button A → Display AN (%d Zyklen)", DISPLAY_CYCLES)
+            on_button_a()
         elif channel == BUTTON_B:
-            cycles_remaining = 0
-            button_override = True
-            greeting_requested = False
-            log.info("Button B → Display AUS")
+            on_button_b()
         elif channel == BUTTON_X:
-            cycles_remaining = CONTINUOUS
-            button_override = True
-            greeting_requested = False
-            log.info("Button X → Dauerbetrieb")
+            on_button_x()
         elif channel == BUTTON_Y:
-            cycles_remaining = 0
-            greeting_requested = True
-            log.info("Button Y → Gruss")
+            on_button_y()
 
     def button_poll_loop():
         """Pollt Button-States alle 50ms."""
@@ -593,18 +644,21 @@ def main():
 
     # ── Terminal-Eingaben ──
     def stdin_loop():
-        """Liest Terminal-Eingaben: r = Reset, a = Start, x = Dauerbetrieb, y = Gruss."""
+        """Terminal: a = 10 Zyklen, aa = Dauerbetrieb, b = Stop, x = Info, y = Gruss."""
         for line in sys.stdin:
             cmd = line.strip().lower()
-            if cmd == 'r':
-                on_button(BUTTON_B)
-                log.info("Terminal → Reset")
+            if cmd == 'aa':
+                handle_a_double()
+                log.info("Terminal → Dauerbetrieb (aa)")
             elif cmd == 'a':
-                on_button(BUTTON_A)
+                handle_a_single()
+                log.info("Terminal → %d Zyklen", DISPLAY_CYCLES)
+            elif cmd == 'b':
+                on_button_b()
             elif cmd == 'x':
-                on_button(BUTTON_X)
+                on_button_x()
             elif cmd == 'y':
-                on_button(BUTTON_Y)
+                on_button_y()
 
     threading.Thread(target=stdin_loop, daemon=True).start()
 
@@ -627,8 +681,8 @@ def main():
         )
 
     log.info("Wetter-Display gestartet – %s", LOCATION_NAME)
-    log.info("A = %d Zyklen | B = Stop | X = Dauerbetrieb | Y = Gruss", DISPLAY_CYCLES)
-    log.info("Terminal: r = Reset | a = %d Zyklen | x = Dauerbetrieb | y = Gruss", DISPLAY_CYCLES)
+    log.info("A = %d Zyklen | A+A = Dauerbetrieb | B = Stop | X = Info | Y = Gruss", DISPLAY_CYCLES)
+    log.info("Terminal: a = %d Zyklen | aa = Dauerbetrieb | b = Stop | x = Info | y = Gruss", DISPLAY_CYCLES)
     log.info("Warte auf erste Wetterdaten …")
 
     # Warte bis erste Daten da sind
@@ -646,6 +700,23 @@ def main():
             greeting_requested = False
             hat_reset(hat)
             greeting_sequence(hat, weather_data, lock)
+            hat_reset(hat)
+            continue
+
+        # Info-Anzeige (Button X)
+        if info_requested:
+            info_requested = False
+            hat_reset(hat)
+            with lock:
+                last_fetch = weather_data.get('_last_fetch', 0)
+            if last_fetch > 0:
+                fetch_time = datetime.fromtimestamp(last_fetch).strftime("%H:%M")
+                age_min = int((time.time() - last_fetch) / 60)
+                info_text = f"  {LOCATION_NAME}  Aktualisiert {fetch_time} (vor {age_min} min)  "
+            else:
+                info_text = f"  {LOCATION_NAME}  Keine Daten  "
+            log.info("  [Info] %s", info_text.strip())
+            hat_scroll(hat, info_text, color=(160, 160, 230))
             hat_reset(hat)
             continue
 
