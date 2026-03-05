@@ -20,6 +20,7 @@
 import json
 import logging
 import os
+import sys
 import time
 import threading
 import requests
@@ -483,6 +484,23 @@ def main():
     button_x.when_pressed = on_button_x
     button_y.when_pressed = on_button_y
 
+    # ── Terminal-Eingaben ──
+    def stdin_loop():
+        """Liest Terminal-Eingaben: r = Reset, a = Start, x = Dauerbetrieb, y = Gruss."""
+        for line in sys.stdin:
+            cmd = line.strip().lower()
+            if cmd == 'r':
+                on_button_b()
+                log.info("Terminal → Reset")
+            elif cmd == 'a':
+                on_button_a()
+            elif cmd == 'x':
+                on_button_x()
+            elif cmd == 'y':
+                on_button_y()
+
+    threading.Thread(target=stdin_loop, daemon=True).start()
+
     # ── Autostart-Scheduler starten ──
     if AUTOSTART_ENABLED:
         def activate_continuous():
@@ -502,6 +520,7 @@ def main():
 
     log.info("Wetter-Display gestartet – %s", LOCATION_NAME)
     log.info("A = %d Zyklen | B = Stop | X = Dauerbetrieb | Y = Gruss", DISPLAY_CYCLES)
+    log.info("Terminal: r = Reset | a = %d Zyklen | x = Dauerbetrieb | y = Gruss", DISPLAY_CYCLES)
     log.info("Warte auf erste Wetterdaten …")
 
     # Warte bis erste Daten da sind
