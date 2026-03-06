@@ -50,7 +50,7 @@ class Config:
     location: LocationConfig = field(default_factory=LocationConfig)
     display: DisplayConfig = field(default_factory=DisplayConfig)
     fetch_interval: int = 1800
-    greeting_text: str = "Hallo Carla, hallo Maura, heute wird es {t_max}°C warm. Tschuss!"
+    greeting_text: str = "Hallo! Heute wird es {t_max}°C warm."
     autostart: AutostartConfig = field(default_factory=AutostartConfig)
     colors: ColorsConfig = field(default_factory=ColorsConfig)
 

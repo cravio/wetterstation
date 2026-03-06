@@ -5,8 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=cravio
-WorkingDirectory=/home/cravio/wetterstation
+User=CHANGEME
+WorkingDirectory=/home/CHANGEME/wetterstation
 ExecStart=/usr/bin/python3 -m wetterstation --start
 Restart=on-failure
 RestartSec=30

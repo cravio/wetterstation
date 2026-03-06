@@ -1,0 +1,31 @@
+{
+  "location": {
+    "lat": 47.3769,
+    "lon": 8.5417,
+    "name": "Meine Stadt"
+  },
+  "display": {
+    "scroll_speed": 0.06,
+    "icon_show_time": 5,
+    "brightness": 0.4,
+    "display_cycles": 10
+  },
+  "fetch_interval": 1800,
+  "greeting_text": "Hallo! Heute wird es {t_max}°C warm.",
+  "autostart": {
+    "enabled": true,
+    "hour": 7,
+    "minute": 0
+  },
+  "colors": {
+    "sun": [220, 40, 80],
+    "cloud": [180, 140, 220],
+    "rain": [60, 60, 200],
+    "snow": [210, 195, 240],
+    "thunder": [120, 0, 180],
+    "orange": [200, 30, 100],
+    "star": [160, 160, 230],
+    "green": [160, 80, 200],
+    "heart": [255, 20, 80]
+  }
+}

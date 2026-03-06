@@ -56,8 +56,10 @@ class TestFont:
         assert not missing, f"Info text missing chars: {missing}"
 
     def test_greeting_text_chars_exist(self):
-        """Characters needed for greeting: 'Hallo Carla, hallo Maura, heute wird es 15°C warm'"""
-        needed = set("Hallo Carla, hallo Maura, heute wird es 15°C warm. Tschuss!")
+        """Characters needed for default greeting text."""
+        from wetterstation.config import Config
+        default_greeting = Config().greeting_text.format(t_max=15)
+        needed = set(default_greeting)
         missing = needed - set(FONT.keys())
         assert not missing, f"Greeting text missing chars: {missing}"
 
