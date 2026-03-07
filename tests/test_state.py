@@ -194,12 +194,19 @@ class TestCycleComplete:
 class TestAutostart:
     """Test AUTOSTART event."""
 
-    def test_autostart_starts_continuous(self):
+    def test_autostart_uses_configured_cycles(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.AUTOSTART, cycles=10)
+        sm.process_events()
+        assert sm.state == DisplayState.RUNNING
+        assert sm.cycles_remaining == 10
+
+    def test_autostart_default_cycles(self):
         sm = StateMachine()
         sm.send_event(DisplayEvent.AUTOSTART)
         sm.process_events()
         assert sm.state == DisplayState.RUNNING
-        assert sm.cycles_remaining == -1
+        assert sm.cycles_remaining == 10
 
 
 class TestMultipleEvents:

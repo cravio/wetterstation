@@ -105,7 +105,7 @@ def autostart_scheduler(
                 cfg.autostart.hour,
                 cfg.autostart.minute,
             )
-            sm.send_event(DisplayEvent.AUTOSTART)
+            sm.send_event(DisplayEvent.AUTOSTART, cycles=cfg.display.display_cycles)
             last_triggered_date = now.date()
 
         for _ in range(30):

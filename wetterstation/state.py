@@ -174,6 +174,6 @@ class StateMachine:
 
         elif event == DisplayEvent.AUTOSTART:
             self._state = DisplayState.RUNNING
-            self._cycles_remaining = CONTINUOUS
+            self._cycles_remaining = kwargs.get("cycles", 10)
             self._set_interrupted()
-            log.info("→ RUNNING (Autostart)")
+            log.info("→ RUNNING (%s Zyklen, Autostart)", self._cycles_remaining)
