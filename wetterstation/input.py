@@ -31,34 +31,32 @@ def dispatch_command(
 
     Shared by TerminalInput and FifoInput.
     """
-    if cmd in ("r", "b"):
+    if cmd in ("r", "s"):
         sm.send_event(DisplayEvent.STOP)
         log.info("%s → Stop", source)
-    elif cmd == "aa":
-        sm.send_event(DisplayEvent.START_CONTINUOUS)
-        log.info("%s → Dauerbetrieb", source)
     elif cmd == "a":
         sm.send_event(DisplayEvent.START, cycles=display_cycles)
         log.info("%s → %d Zyklen", source, display_cycles)
-    elif cmd == "xx":
+    elif cmd == "b":
         sm.send_event(DisplayEvent.SHOW_TOMORROW, cycles=display_cycles)
         log.info("%s → Morgen (%d Zyklen)", source, display_cycles)
     elif cmd == "x":
-        sm.send_event(DisplayEvent.SHOW_INFO)
-        log.info("%s → Info", source)
+        sm.send_event(DisplayEvent.START_CONTINUOUS)
+        log.info("%s → Dauerbetrieb", source)
     elif cmd == "y":
         sm.send_event(DisplayEvent.SHOW_GREETING)
         log.info("%s → Gruss", source)
 
 
 class ButtonHandler:
-    """GPIO button handler with double-click detection for Buttons A and X.
+    """GPIO button handler with toggle behavior.
 
-    Buttons (BCM pins):
-      A (5): single = start N cycles, double = continuous
-      B (6): stop
-      X (16): single = show info, double = tomorrow forecast
-      Y (24): show greeting
+    Any button press while the display is active stops and clears first.
+    When idle, each button starts its action:
+      A (5): 10 cycles today
+      B (6): 10 cycles tomorrow
+      X (16): continuous today
+      Y (24): greeting
 
     Runs a polling loop in a daemon thread.
     """
@@ -68,16 +66,11 @@ class ButtonHandler:
     BUTTON_X = 16
     BUTTON_Y = 24
     ALL_BUTTONS = (BUTTON_A, BUTTON_B, BUTTON_X, BUTTON_Y)
-    DOUBLE_CLICK_WINDOW = 3.0
     POLL_INTERVAL = 0.05
 
     def __init__(self, state_machine: StateMachine, display_cycles: int = 10) -> None:
         self._sm = state_machine
         self._display_cycles = display_cycles
-        self._last_a_press = 0.0
-        self._a_click_timer: threading.Timer | None = None
-        self._last_x_press = 0.0
-        self._x_click_timer: threading.Timer | None = None
 
     def start(self) -> None:
         """Initialize GPIO and start polling thread."""
@@ -103,83 +96,46 @@ class ButtonHandler:
                 prev[pin] = state
             time.sleep(self.POLL_INTERVAL)
 
+    def _is_active(self) -> bool:
+        """Check if display is currently showing something."""
+        from wetterstation.state import DisplayState
+        return self._sm.state != DisplayState.IDLE
+
     def _on_button(self, pin: int) -> None:
-        """Dispatch button press to handler."""
-        if pin == self.BUTTON_A:
-            self._on_a()
-        elif pin == self.BUTTON_B:
+        """Dispatch button press: stop if active, otherwise start action."""
+        if self._is_active():
             self._sm.send_event(DisplayEvent.STOP)
-            log.info("Button B → Stop")
+            log.info("Button %s → Stop (war aktiv)", self._pin_name(pin))
+            return
+
+        if pin == self.BUTTON_A:
+            self._sm.send_event(DisplayEvent.START, cycles=self._display_cycles)
+            log.info("Button A → %d Zyklen", self._display_cycles)
+        elif pin == self.BUTTON_B:
+            self._sm.send_event(DisplayEvent.SHOW_TOMORROW, cycles=self._display_cycles)
+            log.info("Button B → Morgen (%d Zyklen)", self._display_cycles)
         elif pin == self.BUTTON_X:
-            self._on_x()
+            self._sm.send_event(DisplayEvent.START_CONTINUOUS)
+            log.info("Button X → Dauerbetrieb")
         elif pin == self.BUTTON_Y:
             self._sm.send_event(DisplayEvent.SHOW_GREETING)
             log.info("Button Y → Gruss")
 
-    def _on_a(self) -> None:
-        """Handle Button A with double-click detection."""
-        now = time.monotonic()
-        elapsed = now - self._last_a_press
-        self._last_a_press = now
-
-        if elapsed <= self.DOUBLE_CLICK_WINDOW:
-            # Double-click: cancel pending single-click, start continuous
-            if self._a_click_timer is not None:
-                self._a_click_timer.cancel()
-                self._a_click_timer = None
-            self._sm.send_event(DisplayEvent.START_CONTINUOUS)
-            log.info("Button A Doppelklick → Dauerbetrieb")
-        else:
-            # First click: start timer, wait for possible second
-            if self._a_click_timer is not None:
-                self._a_click_timer.cancel()
-            self._a_click_timer = threading.Timer(
-                self.DOUBLE_CLICK_WINDOW, self._on_a_single
-            )
-            self._a_click_timer.daemon = True
-            self._a_click_timer.start()
-
-    def _on_a_single(self) -> None:
-        """Called after double-click window expires → single click confirmed."""
-        self._sm.send_event(DisplayEvent.START, cycles=self._display_cycles)
-        log.info("Button A → %d Zyklen", self._display_cycles)
-
-    def _on_x(self) -> None:
-        """Handle Button X with double-click detection."""
-        now = time.monotonic()
-        elapsed = now - self._last_x_press
-        self._last_x_press = now
-
-        if elapsed <= self.DOUBLE_CLICK_WINDOW:
-            if self._x_click_timer is not None:
-                self._x_click_timer.cancel()
-                self._x_click_timer = None
-            self._sm.send_event(DisplayEvent.SHOW_TOMORROW, cycles=self._display_cycles)
-            log.info("Button X Doppelklick → Morgen (%d Zyklen)", self._display_cycles)
-        else:
-            if self._x_click_timer is not None:
-                self._x_click_timer.cancel()
-            self._x_click_timer = threading.Timer(
-                self.DOUBLE_CLICK_WINDOW, self._on_x_single
-            )
-            self._x_click_timer.daemon = True
-            self._x_click_timer.start()
-
-    def _on_x_single(self) -> None:
-        """Called after double-click window expires → single click confirmed."""
-        self._sm.send_event(DisplayEvent.SHOW_INFO)
-        log.info("Button X → Info")
+    @staticmethod
+    def _pin_name(pin: int) -> str:
+        names = {5: "A", 6: "B", 16: "X", 24: "Y"}
+        return names.get(pin, str(pin))
 
 
 class TerminalInput:
     """Terminal command handler reading from stdin.
 
     Commands:
-      a   = start N cycles
-      aa  = continuous mode
-      b/r = stop
-      x   = info
+      a   = 10 cycles today
+      b   = 10 cycles tomorrow
+      x   = continuous today
       y   = greeting
+      r/s = stop
     """
 
     def __init__(self, state_machine: StateMachine, display_cycles: int = 10) -> None:
@@ -208,7 +164,7 @@ class FifoInput:
         echo a > /tmp/wetterstation.cmd
         echo b > /tmp/wetterstation.cmd
 
-    Commands: same as TerminalInput (a, aa, b/r, x, y).
+    Commands: same as TerminalInput (a, b, x, y, r/s).
     """
 
     FIFO_PATH = "/tmp/wetterstation.cmd"

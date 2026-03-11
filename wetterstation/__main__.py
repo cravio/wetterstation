@@ -199,11 +199,11 @@ def main() -> None:
     # ── Startup Info ──
     log.info("Wetter-Display gestartet – %s", cfg.location.name)
     log.info(
-        "A = %d Zyklen | A+A = Dauerbetrieb | B = Stop | X = Info | X+X = Morgen | Y = Gruss",
+        "A = %d Zyklen | B = Morgen | X = Dauerbetrieb | Y = Gruss | Taste bei Anzeige = Stop",
         cfg.display.display_cycles,
     )
     log.info(
-        "Terminal: r/b = Stop | a = %d Zyklen | aa = Dauerbetrieb | x = Info | xx = Morgen | y = Gruss",
+        "Terminal: a = %d Zyklen | b = Morgen | x = Dauerbetrieb | y = Gruss | r/s = Stop",
         cfg.display.display_cycles,
     )
 
