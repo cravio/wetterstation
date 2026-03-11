@@ -23,6 +23,7 @@ class DisplayState(Enum):
     RUNNING = auto()   # Weather display cycle active
     GREETING = auto()  # Showing greeting sequence
     INFO = auto()      # Showing info (location + update time)
+    TOMORROW = auto()  # Weather forecast for tomorrow
 
 
 class DisplayEvent(Enum):
@@ -33,9 +34,11 @@ class DisplayEvent(Enum):
     STOP = auto()             # Stop display
     SHOW_INFO = auto()        # Show info display
     SHOW_GREETING = auto()    # Show greeting sequence
+    SHOW_TOMORROW = auto()    # Show tomorrow's forecast
     CYCLE_COMPLETE = auto()   # One display cycle completed
     GREETING_COMPLETE = auto()  # Greeting sequence finished
     INFO_COMPLETE = auto()    # Info display finished
+    TOMORROW_COMPLETE = auto()  # Tomorrow forecast finished
     AUTOSTART = auto()        # Scheduled autostart
 
 
@@ -87,6 +90,7 @@ class StateMachine:
         DisplayEvent.STOP,
         DisplayEvent.SHOW_GREETING,
         DisplayEvent.SHOW_INFO,
+        DisplayEvent.SHOW_TOMORROW,
         DisplayEvent.AUTOSTART,
     })
 
@@ -155,6 +159,13 @@ class StateMachine:
             self._set_interrupted()
             log.info("→ INFO")
 
+        elif event == DisplayEvent.SHOW_TOMORROW:
+            cycles = kwargs.get("cycles", 10)
+            self._state = DisplayState.TOMORROW
+            self._cycles_remaining = cycles
+            self._set_interrupted()
+            log.info("→ TOMORROW (%d Zyklen)", cycles)
+
         elif event == DisplayEvent.CYCLE_COMPLETE:
             if self._cycles_remaining == CONTINUOUS:
                 pass  # stay running, don't decrement
@@ -171,6 +182,10 @@ class StateMachine:
         elif event == DisplayEvent.INFO_COMPLETE:
             self._state = DisplayState.IDLE
             log.info("→ IDLE (Info fertig)")
+
+        elif event == DisplayEvent.TOMORROW_COMPLETE:
+            self._state = DisplayState.IDLE
+            log.info("→ IDLE (Morgen fertig)")
 
         elif event == DisplayEvent.AUTOSTART:
             self._state = DisplayState.RUNNING

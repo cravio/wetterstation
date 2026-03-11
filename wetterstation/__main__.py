@@ -18,7 +18,7 @@ from datetime import datetime
 
 from wetterstation.config import Config, load_config
 from wetterstation.state import DisplayState, DisplayEvent, StateMachine
-from wetterstation.weather import WeatherData, fetch_weather, parse_weather
+from wetterstation.weather import WeatherData, fetch_weather, parse_weather, parse_weather_tomorrow
 from wetterstation.renderer import format_temp
 from wetterstation.animations import (
     weather_cycle,
@@ -53,6 +53,7 @@ def create_display(use_simulator: bool):
 def weather_fetch_loop(
     cfg: Config,
     weather_holder: list,  # [WeatherData | None]
+    weather_tomorrow_holder: list,  # [WeatherData | None]
     lock: threading.Lock,
     stop_event: threading.Event,
 ) -> None:
@@ -62,8 +63,10 @@ def weather_fetch_loop(
         try:
             raw = fetch_weather(cfg.location.lat, cfg.location.lon)
             parsed = parse_weather(raw)
+            parsed_tomorrow = parse_weather_tomorrow(raw)
             with lock:
                 weather_holder[0] = parsed
+                weather_tomorrow_holder[0] = parsed_tomorrow
             log.info(
                 "Min %s°C / Max %s°C | Regen: %s | Sonne: %s",
                 format_temp(parsed.t_min),
@@ -71,6 +74,14 @@ def weather_fetch_loop(
                 "Ja" if parsed.regen else "Nein",
                 "Ja" if parsed.sonne else "Nein",
             )
+            if parsed_tomorrow:
+                log.info(
+                    "Morgen: Min %s°C / Max %s°C | Regen: %s | Sonne: %s",
+                    format_temp(parsed_tomorrow.t_min),
+                    format_temp(parsed_tomorrow.t_max),
+                    "Ja" if parsed_tomorrow.regen else "Nein",
+                    "Ja" if parsed_tomorrow.sonne else "Nein",
+                )
         except Exception as e:
             log.error("Wetterdaten-Abruf fehlgeschlagen: %s", e)
             with lock:
@@ -140,12 +151,13 @@ def main() -> None:
 
     # ── Weather Fetch Thread ──
     weather_holder: list[WeatherData | None] = [None]
+    weather_tomorrow_holder: list[WeatherData | None] = [None]
     weather_lock = threading.Lock()
     stop_event = threading.Event()
 
     fetch_thread = threading.Thread(
         target=weather_fetch_loop,
-        args=(cfg, weather_holder, weather_lock, stop_event),
+        args=(cfg, weather_holder, weather_tomorrow_holder, weather_lock, stop_event),
         daemon=True,
     )
     fetch_thread.start()
@@ -187,11 +199,11 @@ def main() -> None:
     # ── Startup Info ──
     log.info("Wetter-Display gestartet – %s", cfg.location.name)
     log.info(
-        "A = %d Zyklen | A+A = Dauerbetrieb | B = Stop | X = Info | Y = Gruss",
+        "A = %d Zyklen | A+A = Dauerbetrieb | B = Stop | X = Info | X+X = Morgen | Y = Gruss",
         cfg.display.display_cycles,
     )
     log.info(
-        "Terminal: r/b = Stop | a = %d Zyklen | aa = Dauerbetrieb | x = Info | y = Gruss",
+        "Terminal: r/b = Stop | a = %d Zyklen | aa = Dauerbetrieb | x = Info | xx = Morgen | y = Gruss",
         cfg.display.display_cycles,
     )
 
@@ -274,6 +286,36 @@ def main() -> None:
         # ── IDLE ──
         if state == DisplayState.IDLE:
             time.sleep(0.1)
+            continue
+
+        # ── TOMORROW ──
+        if state == DisplayState.TOMORROW:
+            with weather_lock:
+                w = weather_tomorrow_holder[0]
+            if w is None:
+                time.sleep(0.5)
+                continue
+
+            completed = weather_cycle(
+                display, w,
+                scroll_speed=cfg.display.scroll_speed,
+                icon_time=cfg.display.icon_show_time,
+                interrupt=interrupt,
+            )
+
+            if completed:
+                sm.send_event(DisplayEvent.CYCLE_COMPLETE)
+
+            display.clear()
+            display.show()
+            time.sleep(0.01)
+
+            if sm.state == DisplayState.TOMORROW:
+                end = time.monotonic() + 1.0
+                while time.monotonic() < end:
+                    if interrupt.is_set():
+                        break
+                    time.sleep(0.02)
             continue
 
         # ── RUNNING ──

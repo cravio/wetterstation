@@ -191,6 +191,66 @@ class TestCycleComplete:
         assert sm.cycles_remaining == -1
 
 
+class TestTomorrowTransitions:
+    """Test SHOW_TOMORROW event."""
+
+    def test_idle_to_tomorrow(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.SHOW_TOMORROW, cycles=10)
+        sm.process_events()
+        assert sm.state == DisplayState.TOMORROW
+        assert sm.cycles_remaining == 10
+
+    def test_running_to_tomorrow(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.START, cycles=10)
+        sm.process_events()
+        sm.send_event(DisplayEvent.SHOW_TOMORROW, cycles=5)
+        sm.process_events()
+        assert sm.state == DisplayState.TOMORROW
+        assert sm.cycles_remaining == 5
+
+    def test_tomorrow_sets_interrupted(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.SHOW_TOMORROW, cycles=10)
+        sm.process_events()
+        assert sm.interrupted
+
+    def test_tomorrow_cycle_complete_decrements(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.SHOW_TOMORROW, cycles=3)
+        sm.process_events()
+        sm.send_event(DisplayEvent.CYCLE_COMPLETE)
+        sm.process_events()
+        assert sm.state == DisplayState.TOMORROW
+        assert sm.cycles_remaining == 2
+
+    def test_tomorrow_last_cycle_to_idle(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.SHOW_TOMORROW, cycles=1)
+        sm.process_events()
+        sm.send_event(DisplayEvent.CYCLE_COMPLETE)
+        sm.process_events()
+        assert sm.state == DisplayState.IDLE
+        assert sm.cycles_remaining == 0
+
+    def test_tomorrow_complete_returns_to_idle(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.SHOW_TOMORROW, cycles=10)
+        sm.process_events()
+        sm.send_event(DisplayEvent.TOMORROW_COMPLETE)
+        sm.process_events()
+        assert sm.state == DisplayState.IDLE
+
+    def test_stop_cancels_tomorrow(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.SHOW_TOMORROW, cycles=10)
+        sm.process_events()
+        sm.send_event(DisplayEvent.STOP)
+        sm.process_events()
+        assert sm.state == DisplayState.IDLE
+
+
 class TestAutostart:
     """Test AUTOSTART event."""
 

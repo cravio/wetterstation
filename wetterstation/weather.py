@@ -54,7 +54,7 @@ def fetch_weather(
         f"?latitude={lat}&longitude={lon}"
         "&hourly=weathercode,temperature_2m"
         "&daily=temperature_2m_max,temperature_2m_min"
-        "&timezone=Europe%2FZurich&forecast_days=1"
+        "&timezone=Europe%2FZurich&forecast_days=2"
     )
     for attempt in range(max_retries):
         try:
@@ -115,8 +115,23 @@ def dominant_code(
     return max(set(vals), key=vals.count)
 
 
+RAIN_CODES = {51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99}
+SUN_CODES = {0, 1}
+
+
+def _filter_day(times: list[str], codes: list[int], date_str: str) -> tuple[list[str], list[int]]:
+    """Filter hourly data to a specific date (YYYY-MM-DD)."""
+    day_times = []
+    day_codes = []
+    for i, t in enumerate(times):
+        if t.startswith(date_str):
+            day_times.append(t)
+            day_codes.append(codes[i])
+    return day_times, day_codes
+
+
 def parse_weather(data: dict) -> WeatherData:
-    """Parse Open-Meteo API response into WeatherData.
+    """Parse today's weather from Open-Meteo API response.
 
     Args:
         data: Raw API response dict.
@@ -129,26 +144,67 @@ def parse_weather(data: dict) -> WeatherData:
     t_max = round(data["daily"]["temperature_2m_max"][0], 1)
     t_min = round(data["daily"]["temperature_2m_min"][0], 1)
 
+    today = data["daily"]["time"][0]
+    day_times, day_codes = _filter_day(times, codes, today)
+
     now_hour = datetime.now().hour
 
-    RAIN_CODES = {51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99}
-    SUN_CODES = {0, 1}
-
     regen = any(
-        codes[i] in RAIN_CODES
-        for i, t in enumerate(times)
+        day_codes[i] in RAIN_CODES
+        for i, t in enumerate(day_times)
         if "T" in t and int(t.split("T")[1][:2]) >= now_hour
     )
     sonne = any(
-        codes[i] in SUN_CODES
-        for i, t in enumerate(times)
+        day_codes[i] in SUN_CODES
+        for i, t in enumerate(day_times)
         if "T" in t and int(t.split("T")[1][:2]) >= now_hour
     )
 
     return WeatherData(
-        morning=wmo_to_icon(dominant_code(codes, times, range(6, 12)), 9),
-        midday=wmo_to_icon(dominant_code(codes, times, range(12, 17)), 14),
-        evening=wmo_to_icon(dominant_code(codes, times, range(17, 22)), 19),
+        morning=wmo_to_icon(dominant_code(day_codes, day_times, range(6, 12)), 9),
+        midday=wmo_to_icon(dominant_code(day_codes, day_times, range(12, 17)), 14),
+        evening=wmo_to_icon(dominant_code(day_codes, day_times, range(17, 22)), 19),
+        t_max=t_max,
+        t_min=t_min,
+        regen=regen,
+        sonne=sonne,
+        last_fetch=time.time(),
+    )
+
+
+def parse_weather_tomorrow(data: dict) -> WeatherData | None:
+    """Parse tomorrow's weather from Open-Meteo API response.
+
+    Requires forecast_days=2 in the API call. Returns None if
+    tomorrow's data is not available.
+
+    Args:
+        data: Raw API response dict.
+
+    Returns:
+        Parsed WeatherData for tomorrow, or None.
+    """
+    if len(data["daily"]["time"]) < 2:
+        return None
+
+    times = data["hourly"]["time"]
+    codes = data["hourly"]["weathercode"]
+    t_max = round(data["daily"]["temperature_2m_max"][1], 1)
+    t_min = round(data["daily"]["temperature_2m_min"][1], 1)
+
+    tomorrow = data["daily"]["time"][1]
+    day_times, day_codes = _filter_day(times, codes, tomorrow)
+
+    if not day_codes:
+        return None
+
+    regen = any(c in RAIN_CODES for c in day_codes)
+    sonne = any(c in SUN_CODES for c in day_codes)
+
+    return WeatherData(
+        morning=wmo_to_icon(dominant_code(day_codes, day_times, range(6, 12)), 9),
+        midday=wmo_to_icon(dominant_code(day_codes, day_times, range(12, 17)), 14),
+        evening=wmo_to_icon(dominant_code(day_codes, day_times, range(17, 22)), 19),
         t_max=t_max,
         t_min=t_min,
         regen=regen,

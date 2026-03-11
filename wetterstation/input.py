@@ -40,6 +40,9 @@ def dispatch_command(
     elif cmd == "a":
         sm.send_event(DisplayEvent.START, cycles=display_cycles)
         log.info("%s → %d Zyklen", source, display_cycles)
+    elif cmd == "xx":
+        sm.send_event(DisplayEvent.SHOW_TOMORROW, cycles=display_cycles)
+        log.info("%s → Morgen (%d Zyklen)", source, display_cycles)
     elif cmd == "x":
         sm.send_event(DisplayEvent.SHOW_INFO)
         log.info("%s → Info", source)
@@ -49,12 +52,12 @@ def dispatch_command(
 
 
 class ButtonHandler:
-    """GPIO button handler with double-click detection for Button A.
+    """GPIO button handler with double-click detection for Buttons A and X.
 
     Buttons (BCM pins):
       A (5): single = start N cycles, double = continuous
       B (6): stop
-      X (16): show info
+      X (16): single = show info, double = tomorrow forecast
       Y (24): show greeting
 
     Runs a polling loop in a daemon thread.
@@ -73,6 +76,8 @@ class ButtonHandler:
         self._display_cycles = display_cycles
         self._last_a_press = 0.0
         self._a_click_timer: threading.Timer | None = None
+        self._last_x_press = 0.0
+        self._x_click_timer: threading.Timer | None = None
 
     def start(self) -> None:
         """Initialize GPIO and start polling thread."""
@@ -106,8 +111,7 @@ class ButtonHandler:
             self._sm.send_event(DisplayEvent.STOP)
             log.info("Button B → Stop")
         elif pin == self.BUTTON_X:
-            self._sm.send_event(DisplayEvent.SHOW_INFO)
-            log.info("Button X → Info")
+            self._on_x()
         elif pin == self.BUTTON_Y:
             self._sm.send_event(DisplayEvent.SHOW_GREETING)
             log.info("Button Y → Gruss")
@@ -139,6 +143,32 @@ class ButtonHandler:
         """Called after double-click window expires → single click confirmed."""
         self._sm.send_event(DisplayEvent.START, cycles=self._display_cycles)
         log.info("Button A → %d Zyklen", self._display_cycles)
+
+    def _on_x(self) -> None:
+        """Handle Button X with double-click detection."""
+        now = time.monotonic()
+        elapsed = now - self._last_x_press
+        self._last_x_press = now
+
+        if elapsed <= self.DOUBLE_CLICK_WINDOW:
+            if self._x_click_timer is not None:
+                self._x_click_timer.cancel()
+                self._x_click_timer = None
+            self._sm.send_event(DisplayEvent.SHOW_TOMORROW, cycles=self._display_cycles)
+            log.info("Button X Doppelklick → Morgen (%d Zyklen)", self._display_cycles)
+        else:
+            if self._x_click_timer is not None:
+                self._x_click_timer.cancel()
+            self._x_click_timer = threading.Timer(
+                self.DOUBLE_CLICK_WINDOW, self._on_x_single
+            )
+            self._x_click_timer.daemon = True
+            self._x_click_timer.start()
+
+    def _on_x_single(self) -> None:
+        """Called after double-click window expires → single click confirmed."""
+        self._sm.send_event(DisplayEvent.SHOW_INFO)
+        log.info("Button X → Info")
 
 
 class TerminalInput:

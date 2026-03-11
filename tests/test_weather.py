@@ -6,6 +6,7 @@ from wetterstation.weather import (
     WeatherData,
     fetch_weather,
     parse_weather,
+    parse_weather_tomorrow,
     dominant_code,
 )
 
@@ -104,6 +105,63 @@ class TestDominantCode:
         assert dominant_code(codes, times, range(6, 12)) == 61
 
 
+class TestParseWeatherTomorrow:
+    """Test parsing tomorrow's weather data."""
+
+    def test_parse_tomorrow_returns_weather_data(self, sample_weather_api_response):
+        result = parse_weather_tomorrow(sample_weather_api_response)
+        assert isinstance(result, WeatherData)
+
+    def test_parse_tomorrow_extracts_next_day_temps(self, sample_weather_api_response):
+        result = parse_weather_tomorrow(sample_weather_api_response)
+        assert result.t_max == 15.5
+        assert result.t_min == 2.8
+
+    def test_parse_tomorrow_checks_all_hours_for_rain(self):
+        """Tomorrow checks all 24h, not 'from now onwards'."""
+        hours_d1 = [f"2026-03-05T{h:02d}:00" for h in range(24)]
+        hours_d2 = [f"2026-03-06T{h:02d}:00" for h in range(24)]
+        codes_d1 = [0] * 24
+        codes_d2 = [61] + [0] * 23  # rain only at midnight tomorrow
+        data = {
+            "hourly": {"time": hours_d1 + hours_d2,
+                       "weathercode": codes_d1 + codes_d2,
+                       "temperature_2m": [10.0] * 48},
+            "daily": {"time": ["2026-03-05", "2026-03-06"],
+                      "temperature_2m_max": [10.0, 12.0],
+                      "temperature_2m_min": [5.0, 6.0]},
+        }
+        result = parse_weather_tomorrow(data)
+        assert result.regen is True
+
+    def test_parse_tomorrow_detects_sun(self, sample_weather_api_response):
+        # Day 2 has sun codes (0, 1)
+        result = parse_weather_tomorrow(sample_weather_api_response)
+        assert result.sonne is True
+
+    def test_parse_tomorrow_no_rain(self, sample_weather_api_response):
+        # Day 2 has no rain codes
+        result = parse_weather_tomorrow(sample_weather_api_response)
+        assert result.regen is False
+
+    def test_parse_tomorrow_returns_none_if_only_one_day(self):
+        hours = [f"2026-03-05T{h:02d}:00" for h in range(24)]
+        data = {
+            "hourly": {"time": hours, "weathercode": [0] * 24,
+                       "temperature_2m": [10.0] * 24},
+            "daily": {"time": ["2026-03-05"],
+                      "temperature_2m_max": [15.0], "temperature_2m_min": [5.0]},
+        }
+        result = parse_weather_tomorrow(data)
+        assert result is None
+
+    def test_parse_tomorrow_has_three_icons(self, sample_weather_api_response):
+        result = parse_weather_tomorrow(sample_weather_api_response)
+        assert result.morning is not None
+        assert result.midday is not None
+        assert result.evening is not None
+
+
 class TestFetchWeather:
     """Test API fetching with retry logic."""
 
@@ -157,7 +215,8 @@ class TestWeatherDataNoRain:
         data = {
             "hourly": {"time": hours, "weathercode": codes,
                        "temperature_2m": [10.0] * 24},
-            "daily": {"temperature_2m_max": [15.0], "temperature_2m_min": [5.0]},
+            "daily": {"time": ["2026-03-05"],
+                      "temperature_2m_max": [15.0], "temperature_2m_min": [5.0]},
         }
         result = parse_weather(data)
         assert result.regen is False
