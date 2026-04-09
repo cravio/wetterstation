@@ -24,7 +24,9 @@ from wetterstation.animations import (
     weather_cycle,
     greeting_sequence,
     info_display,
+    transit_display,
 )
+from wetterstation.transit import TransitDeparture, fetch_departures
 
 log = logging.getLogger("wetterstation")
 
@@ -91,6 +93,35 @@ def weather_fetch_loop(
                     log.info("Verwende letzte Daten (Alter: %d min)", age)
 
         for _ in range(cfg.fetch_interval):
+            if stop_event.is_set():
+                return
+            time.sleep(1)
+
+
+def transit_fetch_loop(
+    cfg: Config,
+    transit_holder: list,  # [list[TransitDeparture]]
+    lock: threading.Lock,
+    stop_event: threading.Event,
+) -> None:
+    """Background thread: fetch transit departures periodically."""
+    if cfg.transit is None:
+        return
+    interval = cfg.transit.fetch_interval
+    while not stop_event.is_set():
+        try:
+            departures = fetch_departures(cfg.transit.stations)
+            with lock:
+                transit_holder[0] = departures
+            if departures:
+                log.info(
+                    "Fahrplan: %s",
+                    ", ".join(f"{d.line}→{d.minutes}'" for d in departures),
+                )
+        except Exception as e:
+            log.error("Fahrplan-Abruf fehlgeschlagen: %s", e)
+
+        for _ in range(interval):
             if stop_event.is_set():
                 return
             time.sleep(1)
@@ -182,6 +213,19 @@ def main() -> None:
     fifo = FifoInput(sm, cfg.display.display_cycles)
     fifo.start()
 
+    # ── Transit Fetch Thread ──
+    transit_holder: list[list[TransitDeparture]] = [[]]
+    transit_lock = threading.Lock()
+
+    if cfg.transit is not None:
+        transit_thread = threading.Thread(
+            target=transit_fetch_loop,
+            args=(cfg, transit_holder, transit_lock, stop_event),
+            daemon=True,
+        )
+        transit_thread.start()
+        log.info("Fahrplan-Fetch gestartet (alle %ds)", cfg.transit.fetch_interval)
+
     # ── Autostart Scheduler ──
     if cfg.autostart.enabled:
         sched_thread = threading.Thread(
@@ -199,11 +243,11 @@ def main() -> None:
     # ── Startup Info ──
     log.info("Wetter-Display gestartet – %s", cfg.location.name)
     log.info(
-        "A = %d Zyklen | B = Morgen | X = Dauerbetrieb | Y = Gruss | Taste bei Anzeige = Stop",
+        "A = %d Zyklen | B = Morgen | X = Fahrplan | Y = Gruss | Taste bei Anzeige = Stop",
         cfg.display.display_cycles,
     )
     log.info(
-        "Terminal: a = %d Zyklen | b = Morgen | x = Dauerbetrieb | y = Gruss | r/s = Stop",
+        "Terminal: a = %d Zyklen | b = Morgen | x/f = Fahrplan | y = Gruss | r/s = Stop",
         cfg.display.display_cycles,
     )
 
@@ -281,6 +325,27 @@ def main() -> None:
             time.sleep(0.01)
             if completed:
                 sm.send_event(DisplayEvent.INFO_COMPLETE)
+            continue
+
+        # ── TRANSIT ──
+        if state == DisplayState.TRANSIT:
+            display.clear()
+            display.show()
+            time.sleep(0.01)
+
+            with transit_lock:
+                deps = list(transit_holder[0])
+
+            completed = transit_display(
+                display, deps,
+                scroll_speed=cfg.display.scroll_speed,
+                interrupt=interrupt,
+            )
+            display.clear()
+            display.show()
+            time.sleep(0.01)
+            if completed:
+                sm.send_event(DisplayEvent.TRANSIT_COMPLETE)
             continue
 
         # ── IDLE ──

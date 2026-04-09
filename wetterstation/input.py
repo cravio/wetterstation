@@ -40,9 +40,9 @@ def dispatch_command(
     elif cmd == "b":
         sm.send_event(DisplayEvent.SHOW_TOMORROW, cycles=display_cycles)
         log.info("%s → Morgen (%d Zyklen)", source, display_cycles)
-    elif cmd == "x":
-        sm.send_event(DisplayEvent.START_CONTINUOUS)
-        log.info("%s → Dauerbetrieb", source)
+    elif cmd in ("x", "f"):
+        sm.send_event(DisplayEvent.SHOW_TRANSIT)
+        log.info("%s → Fahrplan", source)
     elif cmd == "y":
         sm.send_event(DisplayEvent.SHOW_GREETING)
         log.info("%s → Gruss", source)
@@ -55,7 +55,7 @@ class ButtonHandler:
     When idle, each button starts its action:
       A (5): 10 cycles today
       B (6): 10 cycles tomorrow
-      X (16): continuous today
+      X (16): transit departures
       Y (24): greeting
 
     Runs a polling loop in a daemon thread.
@@ -115,8 +115,8 @@ class ButtonHandler:
             self._sm.send_event(DisplayEvent.SHOW_TOMORROW, cycles=self._display_cycles)
             log.info("Button B → Morgen (%d Zyklen)", self._display_cycles)
         elif pin == self.BUTTON_X:
-            self._sm.send_event(DisplayEvent.START_CONTINUOUS)
-            log.info("Button X → Dauerbetrieb")
+            self._sm.send_event(DisplayEvent.SHOW_TRANSIT)
+            log.info("Button X → Fahrplan")
         elif pin == self.BUTTON_Y:
             self._sm.send_event(DisplayEvent.SHOW_GREETING)
             log.info("Button Y → Gruss")
@@ -133,7 +133,7 @@ class TerminalInput:
     Commands:
       a   = 10 cycles today
       b   = 10 cycles tomorrow
-      x   = continuous today
+      x/f = transit departures
       y   = greeting
       r/s = stop
     """
@@ -164,7 +164,7 @@ class FifoInput:
         echo a > /tmp/wetterstation.cmd
         echo b > /tmp/wetterstation.cmd
 
-    Commands: same as TerminalInput (a, b, x, y, r/s).
+    Commands: same as TerminalInput (a, b, x/f, y, r/s).
     """
 
     FIFO_PATH = "/tmp/wetterstation.cmd"

@@ -34,13 +34,6 @@ class TestStartTransitions:
         assert sm.state == DisplayState.RUNNING
         assert sm.cycles_remaining == 10
 
-    def test_start_continuous(self):
-        sm = StateMachine()
-        sm.send_event(DisplayEvent.START_CONTINUOUS)
-        sm.process_events()
-        assert sm.state == DisplayState.RUNNING
-        assert sm.cycles_remaining == -1  # CONTINUOUS
-
     def test_start_while_running_resets_cycles(self):
         sm = StateMachine()
         sm.send_event(DisplayEvent.START, cycles=10)
@@ -180,17 +173,6 @@ class TestCycleComplete:
         assert sm.state == DisplayState.IDLE
         assert sm.cycles_remaining == 0
 
-    def test_continuous_never_decrements(self):
-        sm = StateMachine()
-        sm.send_event(DisplayEvent.START_CONTINUOUS)
-        sm.process_events()
-        for _ in range(100):
-            sm.send_event(DisplayEvent.CYCLE_COMPLETE)
-            sm.process_events()
-        assert sm.state == DisplayState.RUNNING
-        assert sm.cycles_remaining == -1
-
-
 class TestTomorrowTransitions:
     """Test SHOW_TOMORROW event."""
 
@@ -245,6 +227,46 @@ class TestTomorrowTransitions:
     def test_stop_cancels_tomorrow(self):
         sm = StateMachine()
         sm.send_event(DisplayEvent.SHOW_TOMORROW, cycles=10)
+        sm.process_events()
+        sm.send_event(DisplayEvent.STOP)
+        sm.process_events()
+        assert sm.state == DisplayState.IDLE
+
+
+class TestTransitTransitions:
+    """Test SHOW_TRANSIT event."""
+
+    def test_idle_to_transit(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.SHOW_TRANSIT)
+        sm.process_events()
+        assert sm.state == DisplayState.TRANSIT
+
+    def test_running_to_transit(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.START, cycles=10)
+        sm.process_events()
+        sm.send_event(DisplayEvent.SHOW_TRANSIT)
+        sm.process_events()
+        assert sm.state == DisplayState.TRANSIT
+
+    def test_transit_sets_interrupted(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.SHOW_TRANSIT)
+        sm.process_events()
+        assert sm.interrupted
+
+    def test_transit_complete_returns_to_idle(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.SHOW_TRANSIT)
+        sm.process_events()
+        sm.send_event(DisplayEvent.TRANSIT_COMPLETE)
+        sm.process_events()
+        assert sm.state == DisplayState.IDLE
+
+    def test_stop_cancels_transit(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.SHOW_TRANSIT)
         sm.process_events()
         sm.send_event(DisplayEvent.STOP)
         sm.process_events()

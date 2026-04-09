@@ -102,3 +102,42 @@ class TestConfigGreeting:
         f.write_text(json.dumps({"greeting_text": "Einfacher Gruss"}))
         cfg = load_config(str(f))
         assert cfg.greeting_text == "Einfacher Gruss"
+
+
+class TestTransitConfig:
+    """Test transit configuration loading."""
+
+    def test_no_transit_returns_none(self, tmp_path):
+        f = tmp_path / "cfg.json"
+        f.write_text("{}")
+        cfg = load_config(str(f))
+        assert cfg.transit is None
+
+    def test_transit_loads_stations(self, tmp_path):
+        f = tmp_path / "cfg.json"
+        f.write_text(json.dumps({"transit": {
+            "stations": [{
+                "id": "8591074",
+                "short": "Be",
+                "lines": {
+                    "8": {
+                        "color": [0, 128, 255],
+                        "destinations": ["Zürich, Kirche Fluntern"],
+                    },
+                },
+            }],
+            "fetch_interval": 30,
+        }}))
+        cfg = load_config(str(f))
+        assert cfg.transit is not None
+        assert len(cfg.transit.stations) == 1
+        assert cfg.transit.stations[0].short == "Be"
+        assert "8" in cfg.transit.stations[0].lines
+        assert cfg.transit.stations[0].lines["8"].color == (0, 128, 255)
+        assert cfg.transit.fetch_interval == 30
+
+    def test_empty_transit_returns_none(self, tmp_path):
+        f = tmp_path / "cfg.json"
+        f.write_text(json.dumps({"transit": {"stations": []}}))
+        cfg = load_config(str(f))
+        assert cfg.transit is None

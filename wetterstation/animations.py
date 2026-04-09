@@ -1,4 +1,4 @@
-"""Display animations: weather cycle, greeting, info, scrolling.
+"""Display animations: weather cycle, greeting, info, transit, scrolling.
 
 All animations are interruptible via a threading.Event.
 All display access happens through the DisplayBackend protocol.
@@ -10,6 +10,7 @@ import logging
 import time
 import threading
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from wetterstation.renderer import (
     Color,
@@ -22,6 +23,9 @@ from wetterstation.renderer import (
     format_temp,
 )
 from wetterstation.weather import WeatherData
+
+if TYPE_CHECKING:
+    from wetterstation.transit import TransitDeparture
 
 log = logging.getLogger("wetterstation")
 
@@ -304,3 +308,87 @@ def weather_cycle(
 
     log.info("  [Zyklus komplett]")
     return True
+
+
+def _build_colored_columns(
+    segments: list[tuple[str, Color]],
+) -> list[list[Color]]:
+    """Build pixel columns from text segments with different colors."""
+    columns: list[list[Color]] = []
+    for text, color in segments:
+        columns.extend(text_to_columns(text, color))
+    return columns
+
+
+def _scroll_columns(
+    display,
+    columns: list[list[Color]],
+    speed: float,
+    interrupt: threading.Event,
+) -> bool:
+    """Scroll pre-rendered colored columns across the display."""
+    if not columns:
+        return True
+
+    padded = ([[OFF] * DISPLAY_H] * DISPLAY_W
+              + columns
+              + [[OFF] * DISPLAY_H] * DISPLAY_W)
+
+    for start in range(len(padded) - DISPLAY_W + 1):
+        if interrupt.is_set():
+            return False
+        display.clear()
+        for x in range(DISPLAY_W):
+            for y in range(DISPLAY_H):
+                r, g, b = padded[start + x][y]
+                display.set_pixel(x, y, r, g, b)
+        display.show()
+        time.sleep(speed)
+
+    return True
+
+
+def transit_display(
+    display,
+    departures: list[TransitDeparture],
+    scroll_speed: float = 0.06,
+    interrupt: threading.Event | None = None,
+) -> bool:
+    """Scroll transit departures grouped by station.
+
+    Format: "Sp 51 3'  Be 8 5' 17 8'"
+    Line numbers are shown in their configured color.
+
+    Returns:
+        True if completed, False if interrupted.
+    """
+    if interrupt is None:
+        interrupt = threading.Event()
+
+    if not departures:
+        log.info("  [Fahrplan] Keine Abfahrten")
+        return scroll_text(display, "  Keine Abfahrten  ",
+                           color=(160, 160, 230), speed=scroll_speed,
+                           interrupt=interrupt)
+
+    white: Color = (200, 200, 200)
+    segments: list[tuple[str, Color]] = [("  ", white)]
+
+    # Group by station
+    current_station = ""
+    for dep in departures:
+        if dep.station_short != current_station:
+            if current_station:
+                segments.append(("  ", white))  # gap between stations
+            segments.append((f"{dep.station_short} ", white))
+            current_station = dep.station_short
+
+        segments.append((dep.line, dep.color))
+        segments.append((f" {dep.minutes}' ", white))
+
+    segments.append((" ", white))
+
+    columns = _build_colored_columns(segments)
+    log.info("  [Fahrplan] %s",
+             " ".join(f"{d.station_short}:{d.line}={d.minutes}'" for d in departures))
+    return _scroll_columns(display, columns, scroll_speed, interrupt)

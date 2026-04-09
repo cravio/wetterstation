@@ -13,9 +13,6 @@ from typing import Any
 
 log = logging.getLogger("wetterstation")
 
-CONTINUOUS = -1
-
-
 class DisplayState(Enum):
     """Display operating states."""
 
@@ -24,21 +21,23 @@ class DisplayState(Enum):
     GREETING = auto()  # Showing greeting sequence
     INFO = auto()      # Showing info (location + update time)
     TOMORROW = auto()  # Weather forecast for tomorrow
+    TRANSIT = auto()   # Showing transit departures
 
 
 class DisplayEvent(Enum):
     """Events that trigger state transitions."""
 
     START = auto()            # Start N cycles (kwargs: cycles=int)
-    START_CONTINUOUS = auto()  # Start continuous mode
     STOP = auto()             # Stop display
     SHOW_INFO = auto()        # Show info display
     SHOW_GREETING = auto()    # Show greeting sequence
     SHOW_TOMORROW = auto()    # Show tomorrow's forecast
+    SHOW_TRANSIT = auto()     # Show transit departures
     CYCLE_COMPLETE = auto()   # One display cycle completed
     GREETING_COMPLETE = auto()  # Greeting sequence finished
     INFO_COMPLETE = auto()    # Info display finished
     TOMORROW_COMPLETE = auto()  # Tomorrow forecast finished
+    TRANSIT_COMPLETE = auto()  # Transit display finished
     AUTOSTART = auto()        # Scheduled autostart
 
 
@@ -86,11 +85,11 @@ class StateMachine:
     # Events that should immediately interrupt running animations.
     _INTERRUPTING_EVENTS = frozenset({
         DisplayEvent.START,
-        DisplayEvent.START_CONTINUOUS,
         DisplayEvent.STOP,
         DisplayEvent.SHOW_GREETING,
         DisplayEvent.SHOW_INFO,
         DisplayEvent.SHOW_TOMORROW,
+        DisplayEvent.SHOW_TRANSIT,
         DisplayEvent.AUTOSTART,
     })
 
@@ -136,12 +135,6 @@ class StateMachine:
             self._set_interrupted()
             log.info("→ RUNNING (%d Zyklen)", cycles)
 
-        elif event == DisplayEvent.START_CONTINUOUS:
-            self._state = DisplayState.RUNNING
-            self._cycles_remaining = CONTINUOUS
-            self._set_interrupted()
-            log.info("→ RUNNING (Dauerbetrieb)")
-
         elif event == DisplayEvent.STOP:
             self._state = DisplayState.IDLE
             self._cycles_remaining = 0
@@ -166,10 +159,13 @@ class StateMachine:
             self._set_interrupted()
             log.info("→ TOMORROW (%d Zyklen)", cycles)
 
+        elif event == DisplayEvent.SHOW_TRANSIT:
+            self._state = DisplayState.TRANSIT
+            self._set_interrupted()
+            log.info("→ TRANSIT")
+
         elif event == DisplayEvent.CYCLE_COMPLETE:
-            if self._cycles_remaining == CONTINUOUS:
-                pass  # stay running, don't decrement
-            elif self._cycles_remaining > 0:
+            if self._cycles_remaining > 0:
                 self._cycles_remaining -= 1
                 if self._cycles_remaining == 0:
                     self._state = DisplayState.IDLE
@@ -186,6 +182,10 @@ class StateMachine:
         elif event == DisplayEvent.TOMORROW_COMPLETE:
             self._state = DisplayState.IDLE
             log.info("→ IDLE (Morgen fertig)")
+
+        elif event == DisplayEvent.TRANSIT_COMPLETE:
+            self._state = DisplayState.IDLE
+            log.info("→ IDLE (Fahrplan fertig)")
 
         elif event == DisplayEvent.AUTOSTART:
             self._state = DisplayState.RUNNING

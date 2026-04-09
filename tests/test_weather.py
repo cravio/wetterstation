@@ -23,13 +23,30 @@ class TestParseWeather:
         assert result.t_max == 12.2
         assert result.t_min == 1.0
 
-    def test_parse_detects_rain(self, sample_weather_api_response):
-        # Sample data has rain codes (61, 63) in evening
+    def test_parse_detects_rain(self, sample_weather_api_response, monkeypatch):
+        # Sample data has rain codes (61, 63) at hours 17-20.
+        # parse_weather only checks from now_hour onwards, so pin to morning.
+        from unittest.mock import MagicMock
+        from datetime import datetime as real_dt
+        mock_now = MagicMock(wraps=real_dt(2026, 3, 5, 8, 0))
+        mock_now.hour = 8
+        monkeypatch.setattr("wetterstation.weather.datetime", type("dt", (), {
+            "now": staticmethod(lambda: mock_now),
+            "fromtimestamp": real_dt.fromtimestamp,
+        }))
         result = parse_weather(sample_weather_api_response)
         assert result.regen is True
 
-    def test_parse_detects_sun(self, sample_weather_api_response):
-        # Sample data has sun codes (0, 1) in morning
+    def test_parse_detects_sun(self, sample_weather_api_response, monkeypatch):
+        # Sample data has sun codes (0, 1) at hours 6-9.
+        from unittest.mock import MagicMock
+        from datetime import datetime as real_dt
+        mock_now = MagicMock(wraps=real_dt(2026, 3, 5, 6, 0))
+        mock_now.hour = 6
+        monkeypatch.setattr("wetterstation.weather.datetime", type("dt", (), {
+            "now": staticmethod(lambda: mock_now),
+            "fromtimestamp": real_dt.fromtimestamp,
+        }))
         result = parse_weather(sample_weather_api_response)
         assert result.sonne is True
 

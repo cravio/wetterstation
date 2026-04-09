@@ -46,6 +46,25 @@ class ColorsConfig:
 
 
 @dataclass
+class TransitLineConfig:
+    color: tuple[int, int, int] = (255, 255, 255)
+    destinations: list[str] = field(default_factory=list)
+
+
+@dataclass
+class TransitStationConfig:
+    id: str = ""
+    short: str = ""
+    lines: dict[str, TransitLineConfig] = field(default_factory=dict)
+
+
+@dataclass
+class TransitConfig:
+    stations: list[TransitStationConfig] = field(default_factory=list)
+    fetch_interval: int = 60
+
+
+@dataclass
 class Config:
     location: LocationConfig = field(default_factory=LocationConfig)
     display: DisplayConfig = field(default_factory=DisplayConfig)
@@ -53,6 +72,7 @@ class Config:
     greeting_text: str = "Hallo! Heute wird es {t_max}°C warm."
     autostart: AutostartConfig = field(default_factory=AutostartConfig)
     colors: ColorsConfig = field(default_factory=ColorsConfig)
+    transit: TransitConfig | None = None
 
 
 def _to_tuple(val: list | tuple) -> tuple[int, int, int]:
@@ -117,6 +137,28 @@ def load_config(path: str) -> Config:
         heart=_to_tuple(colors_raw.get("heart", defaults.heart)),
     )
 
+    # Transit config (optional)
+    transit: TransitConfig | None = None
+    transit_raw = raw.get("transit")
+    if transit_raw and transit_raw.get("stations"):
+        stations = []
+        for s in transit_raw["stations"]:
+            lines = {}
+            for line_num, line_data in s.get("lines", {}).items():
+                lines[line_num] = TransitLineConfig(
+                    color=_to_tuple(line_data.get("color", (255, 255, 255))),
+                    destinations=line_data.get("destinations", []),
+                )
+            stations.append(TransitStationConfig(
+                id=str(s.get("id", "")),
+                short=s.get("short", ""),
+                lines=lines,
+            ))
+        transit = TransitConfig(
+            stations=stations,
+            fetch_interval=transit_raw.get("fetch_interval", 60),
+        )
+
     return Config(
         location=location,
         display=display,
@@ -124,4 +166,5 @@ def load_config(path: str) -> Config:
         greeting_text=raw.get("greeting_text", Config.greeting_text),
         autostart=autostart,
         colors=colors,
+        transit=transit,
     )
