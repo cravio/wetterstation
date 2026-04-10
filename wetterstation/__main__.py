@@ -338,6 +338,7 @@ def main() -> None:
 
             completed = transit_display(
                 display, deps,
+                duration=cfg.display.icon_show_time,
                 scroll_speed=cfg.display.scroll_speed,
                 interrupt=interrupt,
             )

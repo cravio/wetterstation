@@ -351,13 +351,15 @@ def _scroll_columns(
 def transit_display(
     display,
     departures: list[TransitDeparture],
+    duration: float = 5.0,
     scroll_speed: float = 0.06,
     interrupt: threading.Event | None = None,
 ) -> bool:
-    """Scroll transit departures grouped by station.
+    """Show transit departure minutes in line colors.
 
-    Format: "Sp 51 3'  Be 8 5' 17 8'"
-    Line numbers are shown in their configured color.
+    Up to 3 numbers displayed at icon positions (x=0, x=6, x=12),
+    each in the configured line color. Static for *duration* seconds.
+    Falls back to scrolling if more than 3 departures or numbers too wide.
 
     Returns:
         True if completed, False if interrupted.
@@ -371,24 +373,36 @@ def transit_display(
                            color=(160, 160, 230), speed=scroll_speed,
                            interrupt=interrupt)
 
-    white: Color = (200, 200, 200)
-    segments: list[tuple[str, Color]] = [("  ", white)]
-
-    # Group by station
-    current_station = ""
-    for dep in departures:
-        if dep.station_short != current_station:
-            if current_station:
-                segments.append(("  ", white))  # gap between stations
-            segments.append((f"{dep.station_short} ", white))
-            current_station = dep.station_short
-
-        segments.append((dep.line, dep.color))
-        segments.append((f" {dep.minutes}' ", white))
-
-    segments.append((" ", white))
-
-    columns = _build_colored_columns(segments)
     log.info("  [Fahrplan] %s",
-             " ".join(f"{d.station_short}:{d.line}={d.minutes}'" for d in departures))
+             " ".join(f"{d.line}={d.minutes}'" for d in departures))
+
+    # Static mode: up to 3 numbers at icon positions
+    if len(departures) <= 3:
+        # Positions mirror the 3 weather icons: x=0, x=6, x=12
+        x_positions = [0, 6, 12]
+        display.clear()
+        for i, dep in enumerate(departures):
+            cols = text_to_columns(str(dep.minutes), dep.color)
+            # Strip trailing spacer column
+            if cols and all(c == OFF for c in cols[-1]):
+                cols = cols[:-1]
+            # Center in 5px slot
+            width = len(cols)
+            x_start = x_positions[i] + max(0, (5 - width) // 2)
+            for cx, col in enumerate(cols):
+                x = x_start + cx
+                if x >= DISPLAY_W:
+                    break
+                for y, color in enumerate(col):
+                    if color != OFF:
+                        display.set_pixel(x, y, *color)
+        display.show()
+        return _isleep(duration, interrupt)
+
+    # Fallback: scroll all numbers with colors
+    segments: list[tuple[str, Color]] = [("  ", OFF)]
+    for dep in departures:
+        segments.append((str(dep.minutes), dep.color))
+        segments.append((" ", OFF))
+    columns = _build_colored_columns(segments)
     return _scroll_columns(display, columns, scroll_speed, interrupt)
