@@ -237,6 +237,55 @@ def info_display(
                        interrupt=interrupt)
 
 
+def _show_temps(
+    display,
+    t_min: float,
+    t_max: float,
+    duration: float,
+    interrupt: threading.Event,
+) -> bool:
+    """Show min (blue, left) and max (red, right) temperature statically.
+
+    Each rendered as "X°" in its color, positioned at opposite sides.
+    """
+    blue: Color = (60, 60, 200)
+    red: Color = (220, 40, 80)
+
+    min_text = f"{format_temp(t_min)}°"
+    max_text = f"{format_temp(t_max)}°"
+
+    min_cols = text_to_columns(min_text, blue)
+    max_cols = text_to_columns(max_text, red)
+
+    # Strip trailing spacer from each
+    if min_cols and all(c == OFF for c in min_cols[-1]):
+        min_cols = min_cols[:-1]
+    if max_cols and all(c == OFF for c in max_cols[-1]):
+        max_cols = max_cols[:-1]
+
+    display.clear()
+
+    # Min left-aligned at x=0
+    for x, col in enumerate(min_cols):
+        if x >= DISPLAY_W:
+            break
+        for y, color in enumerate(col):
+            if color != OFF:
+                display.set_pixel(x, y, *color)
+
+    # Max right-aligned
+    x_start = DISPLAY_W - len(max_cols)
+    for cx, col in enumerate(max_cols):
+        x = x_start + cx
+        if 0 <= x < DISPLAY_W:
+            for y, color in enumerate(col):
+                if color != OFF:
+                    display.set_pixel(x, y, *color)
+
+    display.show()
+    return _isleep(duration, interrupt)
+
+
 def weather_cycle(
     display,
     weather: WeatherData,
@@ -248,9 +297,9 @@ def weather_cycle(
 
     Phases:
     1. Show 3 weather icons (morning/midday/evening)
-    2. Scroll temperature (min/max)
-    3. Scroll rain status
-    4. Scroll sun status
+    2. Static: min temp (blue, left) / max temp (red, right)
+    3. Scroll: rain + sun status
+    4. Scroll: last update date/time
 
     Args:
         display: DisplayBackend instance.
@@ -273,23 +322,20 @@ def weather_cycle(
         log.info("  [Phase 1] UNTERBROCHEN")
         return False
 
-    # Phase 2: Temperature
-    temp_text = (f"  Min {format_temp(weather.t_min)}°C  "
-                 f"Max {format_temp(weather.t_max)}°C  ")
-    log.info("  [Phase 2] Temperatur")
-    if not scroll_text(display, temp_text, color=(220, 40, 80), speed=scroll_speed,
-                       interrupt=interrupt):
+    # Phase 2: Temperatures (static)
+    log.info("  [Phase 2] Temperatur %s° / %s°",
+             format_temp(weather.t_min), format_temp(weather.t_max))
+    if not _show_temps(display, weather.t_min, weather.t_max,
+                       duration=icon_time, interrupt=interrupt):
         log.info("  [Phase 2] UNTERBROCHEN")
         return False
 
-    if not _isleep(0.5, interrupt):
-        return False
-
-    # Phase 3: Rain
-    regen_label = "Regen Ja" if weather.regen else "Regen Nein"
-    regen_color = (60, 60, 200) if weather.regen else (160, 80, 200)
-    log.info("  [Phase 3] %s", regen_label)
-    if not scroll_text(display, f"  {regen_label}  ", color=regen_color,
+    # Phase 3: Rain + Sun (scrolling)
+    regen = "Ja" if weather.regen else "Nein"
+    sonne = "Ja" if weather.sonne else "Nein"
+    status_text = f"  Regen {regen}  Sonne {sonne}  "
+    log.info("  [Phase 3] Regen %s Sonne %s", regen, sonne)
+    if not scroll_text(display, status_text, color=(160, 160, 230),
                        speed=scroll_speed, interrupt=interrupt):
         log.info("  [Phase 3] UNTERBROCHEN")
         return False
@@ -297,11 +343,14 @@ def weather_cycle(
     if not _isleep(0.5, interrupt):
         return False
 
-    # Phase 4: Sun
-    sonne_label = "Sonne Ja" if weather.sonne else "Sonne Nein"
-    sonne_color = (220, 40, 80) if weather.sonne else (160, 80, 200)
-    log.info("  [Phase 4] %s", sonne_label)
-    if not scroll_text(display, f"  {sonne_label}  ", color=sonne_color,
+    # Phase 4: Last update time
+    if weather.last_fetch > 0:
+        fetch_dt = datetime.fromtimestamp(weather.last_fetch)
+        update_text = f"  {fetch_dt.strftime('%d.%m. %H:%M')}  "
+    else:
+        update_text = "  Keine Daten  "
+    log.info("  [Phase 4] Update %s", update_text.strip())
+    if not scroll_text(display, update_text, color=(160, 160, 230),
                        speed=scroll_speed, interrupt=interrupt):
         log.info("  [Phase 4] UNTERBROCHEN")
         return False
