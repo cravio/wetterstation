@@ -350,7 +350,7 @@ def _scroll_columns(
 
 def transit_display(
     display,
-    departures: list[TransitDeparture],
+    departures: list[TransitDeparture] | None,
     duration: float = 5.0,
     scroll_speed: float = 0.06,
     interrupt: threading.Event | None = None,
@@ -361,11 +361,20 @@ def transit_display(
     each in the configured line color. Static for *duration* seconds.
     Falls back to scrolling if more than 3 departures or numbers too wide.
 
+    Args:
+        departures: List of departures, or None if API unreachable.
+
     Returns:
         True if completed, False if interrupted.
     """
     if interrupt is None:
         interrupt = threading.Event()
+
+    if departures is None:
+        log.info("  [Fahrplan] no connection")
+        return scroll_text(display, "  no connection  ",
+                           color=(120, 0, 0), speed=scroll_speed,
+                           interrupt=interrupt)
 
     if not departures:
         log.info("  [Fahrplan] Keine Abfahrten")

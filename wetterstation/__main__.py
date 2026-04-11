@@ -25,6 +25,7 @@ from wetterstation.animations import (
     greeting_sequence,
     info_display,
     transit_display,
+    scroll_text,
 )
 from wetterstation.transit import TransitDeparture, fetch_departures
 
@@ -214,7 +215,7 @@ def main() -> None:
     fifo.start()
 
     # ── Transit Fetch Thread ──
-    transit_holder: list[list[TransitDeparture]] = [[]]
+    transit_holder: list[list[TransitDeparture] | None] = [None]
     transit_lock = threading.Lock()
 
     if cfg.transit is not None:
@@ -251,11 +252,18 @@ def main() -> None:
         cfg.display.display_cycles,
     )
 
-    # Wait for first weather data
+    # Wait for first weather data (max 30s)
     log.info("Warte auf erste Wetterdaten ...")
-    while weather_holder[0] is None:
+    for _ in range(60):
+        if weather_holder[0] is not None:
+            break
         time.sleep(0.5)
-    log.info("Bereit.")
+    if weather_holder[0] is None:
+        log.warning("Keine Wetterdaten nach 30s – starte ohne")
+        scroll_text(display, "  no connection  ", color=(120, 0, 0),
+                    speed=cfg.display.scroll_speed)
+    else:
+        log.info("Bereit.")
 
     # ── Main Loop ──────────────────────────────────────────────────────
     # ALL display operations happen here in the main thread.
@@ -334,7 +342,8 @@ def main() -> None:
             time.sleep(0.01)
 
             with transit_lock:
-                deps = list(transit_holder[0])
+                raw = transit_holder[0]
+                deps = list(raw) if raw is not None else None
 
             completed = transit_display(
                 display, deps,
@@ -359,7 +368,11 @@ def main() -> None:
             with weather_lock:
                 w = weather_tomorrow_holder[0]
             if w is None:
-                time.sleep(0.5)
+                scroll_text(display, "  no connection  ", color=(120, 0, 0),
+                            speed=cfg.display.scroll_speed, interrupt=interrupt)
+                display.clear()
+                display.show()
+                time.sleep(1)
                 continue
 
             completed = weather_cycle(
@@ -388,7 +401,11 @@ def main() -> None:
         with weather_lock:
             w = weather_holder[0]
         if w is None:
-            time.sleep(0.5)
+            scroll_text(display, "  no connection  ", color=(120, 0, 0),
+                        speed=cfg.display.scroll_speed, interrupt=interrupt)
+            display.clear()
+            display.show()
+            time.sleep(1)
             continue
 
         completed = weather_cycle(
