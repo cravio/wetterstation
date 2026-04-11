@@ -99,6 +99,21 @@ ICONS: dict[str, Icon] = {
         [OFF, HRT, HRT, HRT, OFF],
         [OFF, OFF, HRT, OFF, OFF],
     ],
+    # Crossed-out variants: diagonal red strike-through
+    "no_sun": [
+        [SUN, OFF, SUN, OFF, ORG],
+        [OFF, SUN, SUN, ORG, OFF],
+        [SUN, SUN, ORG, SUN, SUN],
+        [OFF, ORG, SUN, SUN, OFF],
+        [ORG, OFF, SUN, OFF, SUN],
+    ],
+    "no_rain": [
+        [OFF, CLO, CLO, CLO, ORG],
+        [CLO, CLO, CLO, ORG, CLO],
+        [OFF, OFF, ORG, OFF, OFF],
+        [RAI, ORG, RAI, OFF, RAI],
+        [ORG, RAI, OFF, RAI, OFF],
+    ],
 }
 
 # ── Font (4 wide × 5 tall bitmaps) ──────────────────────────────────────────

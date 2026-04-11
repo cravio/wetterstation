@@ -100,24 +100,28 @@ def show_icons(
     duration: float = 5.0,
     interrupt: threading.Event | None = None,
     stale: bool = False,
+    positions: list[int] | None = None,
 ) -> bool:
-    """Show 3 weather icons side by side (at x=0, 6, 12).
+    """Show icons side by side at given x positions.
 
     Args:
         display: DisplayBackend instance.
-        icons: List of 3 icons [morning, midday, evening].
+        icons: List of icons (2 or 3).
         duration: How long to show in seconds.
         interrupt: Event to check for early abort.
         stale: If True, show red pixel at (16, 0) as stale indicator.
+        positions: X positions for each icon. Default: [0, 6, 12].
 
     Returns:
         True if completed, False if interrupted.
     """
     if interrupt is None:
         interrupt = threading.Event()
+    if positions is None:
+        positions = [0, 6, 12]
 
     display.clear()
-    for icon, x_off in zip(icons, [0, 6, 12]):
+    for icon, x_off in zip(icons, positions):
         _set_icon(display, icon, x_off)
 
     if stale:
@@ -330,17 +334,15 @@ def weather_cycle(
         log.info("  [Phase 2] UNTERBROCHEN")
         return False
 
-    # Phase 3: Rain + Sun (scrolling)
-    regen = "Ja" if weather.regen else "Nein"
-    sonne = "Ja" if weather.sonne else "Nein"
-    status_text = f"  Regen {regen}  Sonne {sonne}  "
-    log.info("  [Phase 3] Regen %s Sonne %s", regen, sonne)
-    if not scroll_text(display, status_text, color=(160, 160, 230),
-                       speed=scroll_speed, interrupt=interrupt):
+    # Phase 3: Rain + Sun icons (static)
+    rain_icon = ICONS["rain"] if weather.regen else ICONS["no_rain"]
+    sun_icon = ICONS["sun"] if weather.sonne else ICONS["no_sun"]
+    log.info("  [Phase 3] Regen %s Sonne %s",
+             "Ja" if weather.regen else "Nein",
+             "Ja" if weather.sonne else "Nein")
+    if not show_icons(display, [rain_icon, sun_icon], duration=icon_time,
+                      interrupt=interrupt, positions=[0, 12]):
         log.info("  [Phase 3] UNTERBROCHEN")
-        return False
-
-    if not _isleep(0.5, interrupt):
         return False
 
     # Phase 4: Last update time
