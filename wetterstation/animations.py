@@ -241,53 +241,26 @@ def info_display(
                        interrupt=interrupt)
 
 
-def _show_temps(
+def _scroll_temps(
     display,
     t_min: float,
     t_max: float,
-    duration: float,
+    scroll_speed: float,
     interrupt: threading.Event,
 ) -> bool:
-    """Show min (blue, left) and max (red, right) temperature statically.
-
-    Each rendered as "X°" in its color, positioned at opposite sides.
-    """
+    """Scroll min (blue) and max (red) temperature with degree sign."""
     blue: Color = (60, 60, 200)
     red: Color = (220, 40, 80)
 
-    min_text = f"{format_temp(t_min)}°"
-    max_text = f"{format_temp(t_max)}°"
-
-    min_cols = text_to_columns(min_text, blue)
-    max_cols = text_to_columns(max_text, red)
-
-    # Strip trailing spacer from each
-    if min_cols and all(c == OFF for c in min_cols[-1]):
-        min_cols = min_cols[:-1]
-    if max_cols and all(c == OFF for c in max_cols[-1]):
-        max_cols = max_cols[:-1]
-
-    display.clear()
-
-    # Min left-aligned at x=0
-    for x, col in enumerate(min_cols):
-        if x >= DISPLAY_W:
-            break
-        for y, color in enumerate(col):
-            if color != OFF:
-                display.set_pixel(x, y, *color)
-
-    # Max right-aligned
-    x_start = DISPLAY_W - len(max_cols)
-    for cx, col in enumerate(max_cols):
-        x = x_start + cx
-        if 0 <= x < DISPLAY_W:
-            for y, color in enumerate(col):
-                if color != OFF:
-                    display.set_pixel(x, y, *color)
-
-    display.show()
-    return _isleep(duration, interrupt)
+    segments: list[tuple[str, Color]] = [
+        ("  ", OFF),
+        (f"{format_temp(t_min)}°", blue),
+        ("  ", OFF),
+        (f"{format_temp(t_max)}°", red),
+        ("  ", OFF),
+    ]
+    columns = _build_colored_columns(segments)
+    return _scroll_columns(display, columns, scroll_speed, interrupt)
 
 
 def weather_cycle(
@@ -326,11 +299,11 @@ def weather_cycle(
         log.info("  [Phase 1] UNTERBROCHEN")
         return False
 
-    # Phase 2: Temperatures (static)
+    # Phase 2: Temperatures (scroll, min blue / max red)
     log.info("  [Phase 2] Temperatur %s° / %s°",
              format_temp(weather.t_min), format_temp(weather.t_max))
-    if not _show_temps(display, weather.t_min, weather.t_max,
-                       duration=icon_time, interrupt=interrupt):
+    if not _scroll_temps(display, weather.t_min, weather.t_max,
+                         scroll_speed=scroll_speed, interrupt=interrupt):
         log.info("  [Phase 2] UNTERBROCHEN")
         return False
 
