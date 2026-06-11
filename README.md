@@ -110,7 +110,7 @@ python -m wetterstation --simulator
 | A (2x) | `aa` | `echo aa > ...` | Dauerbetrieb |
 | B | `b` / `r` | `echo b > ...` | Stop |
 | X | `x` | `echo x > ...` | Info (Ort + Aktualisierung) |
-| Y | `y` | `echo y > ...` | Gruss-Animation |
+| Y | `y` | `echo y > ...` | Visualizer an/aus (Toggle) |
 
 ### Anzeigezyklus
 

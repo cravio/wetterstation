@@ -44,19 +44,20 @@ def dispatch_command(
         sm.send_event(DisplayEvent.SHOW_TRANSIT)
         log.info("%s → Fahrplan", source)
     elif cmd == "y":
-        sm.send_event(DisplayEvent.SHOW_GREETING)
-        log.info("%s → Gruss", source)
+        sm.send_event(DisplayEvent.TOGGLE_VIZ)
+        log.info("%s → Visualizer toggle", source)
 
 
 class ButtonHandler:
     """GPIO button handler with toggle behavior.
 
-    Any button press while the display is active stops and clears first.
-    When idle, each button starts its action:
+    Button Y always toggles the audio visualizer (show/hide), regardless
+    of state. For the other buttons, a press while the display is active
+    stops and clears first; when idle, each starts its action:
       A (5): 10 cycles today
       B (6): 10 cycles tomorrow
       X (16): transit departures
-      Y (24): greeting
+      Y (24): visualizer on/off
 
     Runs a polling loop in a daemon thread.
     """
@@ -102,7 +103,13 @@ class ButtonHandler:
         return self._sm.state != DisplayState.IDLE
 
     def _on_button(self, pin: int) -> None:
-        """Dispatch button press: stop if active, otherwise start action."""
+        """Dispatch button press: Y toggles the visualizer; other buttons
+        stop if active, otherwise start their action."""
+        if pin == self.BUTTON_Y:
+            self._sm.send_event(DisplayEvent.TOGGLE_VIZ)
+            log.info("Button Y → Visualizer toggle")
+            return
+
         if self._is_active():
             self._sm.send_event(DisplayEvent.STOP)
             log.info("Button %s → Stop (war aktiv)", self._pin_name(pin))
@@ -117,9 +124,6 @@ class ButtonHandler:
         elif pin == self.BUTTON_X:
             self._sm.send_event(DisplayEvent.SHOW_TRANSIT)
             log.info("Button X → Fahrplan")
-        elif pin == self.BUTTON_Y:
-            self._sm.send_event(DisplayEvent.SHOW_GREETING)
-            log.info("Button Y → Gruss")
 
     @staticmethod
     def _pin_name(pin: int) -> str:

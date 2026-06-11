@@ -42,6 +42,7 @@ class DisplayEvent(Enum):
     AUTOSTART = auto()        # Scheduled autostart
     AIRPLAY_START = auto()    # AirPlay stream became active
     AIRPLAY_STOP = auto()     # AirPlay stream ended
+    TOGGLE_VIZ = auto()       # Manually show/hide the visualizer (button Y)
 
 
 class StateMachine:
@@ -58,6 +59,7 @@ class StateMachine:
         self._needs_clear = False
         self._airplay_active = False
         self._viz_suppressed = False
+        self._viz_manual = False
         self._interrupt_event = interrupt  # threading.Event to abort animations
         self._event_queue: queue.Queue[tuple[DisplayEvent, dict[str, Any]]] = (
             queue.Queue()
@@ -87,6 +89,15 @@ class StateMachine:
     def viz_suppressed(self) -> bool:
         return self._viz_suppressed
 
+    @property
+    def viz_manual(self) -> bool:
+        return self._viz_manual
+
+    @property
+    def viz_wanted(self) -> bool:
+        """Whether the audio analyzer should run (stream active or manual)."""
+        return self._airplay_active or self._viz_manual
+
     def clear_interrupted(self) -> None:
         """Clear the interrupted flag (call from main thread after handling)."""
         self._interrupted = False
@@ -105,6 +116,7 @@ class StateMachine:
         DisplayEvent.SHOW_TRANSIT,
         DisplayEvent.AUTOSTART,
         DisplayEvent.AIRPLAY_STOP,
+        DisplayEvent.TOGGLE_VIZ,
     })
 
     def send_event(self, event: DisplayEvent, **kwargs: Any) -> None:
@@ -140,8 +152,9 @@ class StateMachine:
 
     def _idle_or_viz(self) -> DisplayState:
         """Where to go when a display finishes: visualizer if AirPlay
-        streams (and not suppressed by a button press), else idle."""
-        if self._airplay_active and not self._viz_suppressed:
+        streams or it was turned on manually (and not suppressed by a
+        button press), else idle."""
+        if (self._airplay_active or self._viz_manual) and not self._viz_suppressed:
             return DisplayState.AUDIO_VIZ
         return DisplayState.IDLE
 
@@ -230,10 +243,25 @@ class StateMachine:
 
         elif event == DisplayEvent.AIRPLAY_STOP:
             self._airplay_active = False
-            if self._state == DisplayState.AUDIO_VIZ:
+            # A manually-toggled visualizer keeps running when the stream ends.
+            if self._state == DisplayState.AUDIO_VIZ and not self._viz_manual:
                 self._state = DisplayState.IDLE
                 self._set_interrupted()
                 self._needs_clear = True
                 log.info("→ IDLE (AirPlay beendet)")
             else:
                 log.info("AirPlay beendet")
+
+        elif event == DisplayEvent.TOGGLE_VIZ:
+            if self._state == DisplayState.AUDIO_VIZ:
+                self._viz_manual = False
+                self._state = DisplayState.IDLE
+                self._set_interrupted()
+                self._needs_clear = True
+                log.info("→ IDLE (Visualizer aus)")
+            else:
+                self._viz_manual = True
+                self._viz_suppressed = False
+                self._state = DisplayState.AUDIO_VIZ
+                self._set_interrupted()
+                log.info("→ AUDIO_VIZ (Visualizer an)")

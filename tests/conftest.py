@@ -22,7 +22,7 @@ def sample_config() -> dict:
         "airplay": {
             "enabled": True,
             "flag_file": "/run/shairport-sync/active",
-            "capture_device": "hw:Loopback,1,0",
+            "capture_device": "plughw:Loopback,1,0",
             "fps": 25,
             "freq_min": 40,
             "freq_max": 16000,

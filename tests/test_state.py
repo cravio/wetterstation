@@ -476,6 +476,64 @@ class TestAirplayTransitions:
         assert sm.viz_suppressed
 
 
+class TestToggleViz:
+    """Test TOGGLE_VIZ event (button Y manual visualizer)."""
+
+    def test_toggle_from_idle_starts_viz(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.TOGGLE_VIZ)
+        sm.process_events()
+        assert sm.state == DisplayState.AUDIO_VIZ
+        assert sm.viz_manual
+        assert sm.viz_wanted
+
+    def test_toggle_from_viz_stops(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.TOGGLE_VIZ)
+        sm.process_events()
+        sm.send_event(DisplayEvent.TOGGLE_VIZ)
+        sm.process_events()
+        assert sm.state == DisplayState.IDLE
+        assert not sm.viz_manual
+        assert sm.needs_clear
+
+    def test_toggle_on_sets_interrupted(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.START, cycles=10)
+        sm.process_events()
+        sm.clear_interrupted()
+        sm.send_event(DisplayEvent.TOGGLE_VIZ)  # preempts weather
+        sm.process_events()
+        assert sm.state == DisplayState.AUDIO_VIZ
+        assert sm.interrupted
+
+    def test_manual_viz_survives_airplay_stop(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.TOGGLE_VIZ)   # manual on
+        sm.send_event(DisplayEvent.AIRPLAY_START)
+        sm.process_events()
+        sm.send_event(DisplayEvent.AIRPLAY_STOP)
+        sm.process_events()
+        assert sm.state == DisplayState.AUDIO_VIZ  # manual keeps it alive
+
+    def test_manual_viz_returns_after_weather(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.TOGGLE_VIZ)  # manual on
+        sm.process_events()
+        sm.send_event(DisplayEvent.START, cycles=1)
+        sm.process_events()
+        sm.send_event(DisplayEvent.CYCLE_COMPLETE)
+        sm.process_events()
+        assert sm.state == DisplayState.AUDIO_VIZ
+
+    def test_analyzer_wanted_on_manual(self):
+        sm = StateMachine()
+        assert not sm.viz_wanted
+        sm.send_event(DisplayEvent.TOGGLE_VIZ)
+        sm.process_events()
+        assert sm.viz_wanted
+
+
 class TestClearInterrupted:
     """Test interrupt flag management."""
 

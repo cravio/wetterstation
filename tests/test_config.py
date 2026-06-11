@@ -162,7 +162,7 @@ class TestAirplayConfig:
         cfg = load_config(config_file)
         assert cfg.airplay is not None
         assert cfg.airplay.flag_file == "/run/shairport-sync/active"
-        assert cfg.airplay.capture_device == "hw:Loopback,1,0"
+        assert cfg.airplay.capture_device == "plughw:Loopback,1,0"
         assert cfg.airplay.fps == 25
         assert cfg.airplay.peak_dot is True
 

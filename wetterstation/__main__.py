@@ -314,20 +314,20 @@ def main() -> None:
     # ── Main Loop ──────────────────────────────────────────────────────
     # ALL display operations happen here in the main thread.
     # No other thread touches the display – ever.
-    airplay_was_active = False
+    viz_was_wanted = False
     while True:
         # Process pending events from input threads
         sm.process_events()
 
-        # Start/stop the audio analyzer on airplay_active edges.
-        # It keeps running while weather preempts the visualizer, so the
-        # return to AUDIO_VIZ is instant.
-        if analyzer is not None and sm.airplay_active != airplay_was_active:
-            if sm.airplay_active:
+        # Start/stop the audio analyzer on viz_wanted edges (stream active
+        # OR manually toggled on). It keeps running while weather preempts
+        # the visualizer, so the return to AUDIO_VIZ is instant.
+        if analyzer is not None and sm.viz_wanted != viz_was_wanted:
+            if sm.viz_wanted:
                 analyzer.start()
             else:
                 analyzer.stop()
-            airplay_was_active = sm.airplay_active
+            viz_was_wanted = sm.viz_wanted
 
         # Handle needs_clear (from STOP event)
         if sm.needs_clear:
@@ -417,6 +417,10 @@ def main() -> None:
 
         # ── AUDIO_VIZ ──
         if state == DisplayState.AUDIO_VIZ:
+            if analyzer is None:
+                # Visualizer requested but AirPlay not configured – idle.
+                time.sleep(0.1)
+                continue
             spectrum_burst(
                 display, analyzer, gradient_rows,
                 fps=cfg.airplay.fps,

@@ -67,7 +67,7 @@ class TransitConfig:
 @dataclass
 class AirplayConfig:
     flag_file: str = "/run/shairport-sync/active"
-    capture_device: str = "hw:Loopback,1,0"
+    capture_device: str = "plughw:Loopback,1,0"
     fps: int = 25
     freq_min: float = 40.0
     freq_max: float = 16000.0
