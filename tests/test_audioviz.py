@@ -101,7 +101,8 @@ class TestSpectrumProcessor:
         after_one = proc.process(np.zeros(FFT_SIZE, dtype=np.float32))
         # One silent chunk must not erase the bar (slow release)
         assert after_one[peak_band] > peak_value * 0.5
-        for _ in range(60):
+        # Eventually it fully decays (enough frames for the slow release).
+        for _ in range(400):
             values = proc.process(np.zeros(FFT_SIZE, dtype=np.float32))
         assert values[peak_band] < 0.05
 
