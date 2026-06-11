@@ -73,8 +73,9 @@ class AirplayConfig:
     freq_max: float = 16000.0
     floor_db: float = -60.0
     agc: bool = True
-    attack: float = 0.6
-    release: float = 0.12
+    attack: float = 0.35
+    release: float = 0.10
+    brightness: float = 0.2  # dimmer than weather display (less heat)
     gradient: list[tuple[int, int, int]] = field(
         default_factory=lambda: [(60, 60, 200), (180, 140, 220), (220, 40, 80)]
     )
@@ -195,6 +196,7 @@ def load_config(path: str) -> Config:
             agc=airplay_raw.get("agc", ap_defaults.agc),
             attack=airplay_raw.get("attack", ap_defaults.attack),
             release=airplay_raw.get("release", ap_defaults.release),
+            brightness=airplay_raw.get("brightness", ap_defaults.brightness),
             gradient=[
                 _to_tuple(stop)
                 for stop in airplay_raw.get("gradient", ap_defaults.gradient)

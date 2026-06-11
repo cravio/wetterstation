@@ -173,7 +173,8 @@ class TestAirplayConfig:
         assert cfg.airplay is not None
         assert cfg.airplay.fps == 30
         assert cfg.airplay.floor_db == -60.0  # default
-        assert cfg.airplay.attack == 0.6  # default
+        assert cfg.airplay.attack == 0.35  # default
+        assert cfg.airplay.brightness == 0.2  # default
 
     def test_airplay_gradient_lists_become_tuples(self, config_file):
         cfg = load_config(config_file)

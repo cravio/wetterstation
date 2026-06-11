@@ -315,6 +315,7 @@ def main() -> None:
     # ALL display operations happen here in the main thread.
     # No other thread touches the display – ever.
     viz_was_wanted = False
+    applied_brightness = cfg.display.brightness
     while True:
         # Process pending events from input threads
         sm.process_events()
@@ -344,6 +345,18 @@ def main() -> None:
         interrupt.clear()
 
         state = sm.state
+
+        # Dim the display in the visualizer (less LED current / heat),
+        # restore the configured brightness for everything else.
+        if cfg.airplay is not None:
+            desired_brightness = (
+                cfg.airplay.brightness
+                if state == DisplayState.AUDIO_VIZ
+                else cfg.display.brightness
+            )
+            if desired_brightness != applied_brightness:
+                display.set_brightness(desired_brightness)
+                applied_brightness = desired_brightness
 
         # ── GREETING ──
         if state == DisplayState.GREETING:
