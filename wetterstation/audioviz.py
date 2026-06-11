@@ -96,10 +96,19 @@ class SpectrumProcessor:
         self._cfg = cfg
         self._sample_rate = sample_rate
         self._fft_size = fft_size
+        self._n_bands = n_bands
         self._edges = band_edges(n_bands, cfg.freq_min, cfg.freq_max)
         self._window = np.hanning(fft_size).astype(np.float32)
         self._ring = np.zeros(fft_size, dtype=np.float32)
         self._values = np.zeros(n_bands, dtype=np.float32)
+        # Precompute, once, which band each FFT bin belongs to, so binning
+        # is a single vectorized np.bincount instead of a Python loop per
+        # chunk (cheap enough to run continuously on a Pi Zero 2 W).
+        freqs = np.fft.rfftfreq(fft_size, d=1.0 / sample_rate)
+        band_idx = np.searchsorted(self._edges, freqs, side="right") - 1
+        self._bin_valid = (band_idx >= 0) & (band_idx < n_bands)
+        self._bin_band = band_idx[self._bin_valid]
+        self._bin_power_idx = np.nonzero(self._bin_valid)[0]
         # AGC: slowly decaying peak tracker (dB). Floor prevents silence
         # from amplifying noise to full scale.
         self._agc_ref_db = -20.0
@@ -115,10 +124,20 @@ class SpectrumProcessor:
             self._ring[:-n] = self._ring[n:]
             self._ring[-n:] = mono
 
+        # Silence short-circuit: skip the FFT entirely on (near-)zero input
+        # (e.g. the loopback feeding silence while nothing streams). Just
+        # let the bars decay. This keeps the analyzer near-idle when quiet.
+        if float(np.abs(mono).max()) < 1e-4:
+            self._values *= 1.0 - self._cfg.release
+            return self._values.copy()
+
         spectrum = np.fft.rfft(self._ring * self._window)
         power = np.abs(spectrum) ** 2 / self._fft_size
-        bands = bin_spectrum(power, self._sample_rate, self._fft_size,
-                             self._edges)
+        bands = np.bincount(
+            self._bin_band,
+            weights=power[self._bin_power_idx],
+            minlength=self._n_bands,
+        )[: self._n_bands]
         db = 10.0 * np.log10(bands + 1e-10)
 
         if self._cfg.agc:
