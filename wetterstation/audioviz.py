@@ -404,6 +404,7 @@ def spectrum_burst(
     height = display.height
     frame_time = 1.0 / fps
     end = time.monotonic() + max_duration
+    quiet = 0  # consecutive unchanged frames → back off the poll rate
     while time.monotonic() < end:
         if interrupt.is_set():
             return
@@ -429,8 +430,14 @@ def spectrum_burst(
             draw_spectrum(display, bands, gradient_rows, peaks, peak_color)
             if state is not None:
                 state["sig"] = sig
+            quiet = 0
+        else:
+            quiet = min(quiet + 1, 8)
 
-        remaining = frame_time - (time.monotonic() - frame_start)
+        # Full fps while the picture moves; slow to ~4 Hz when it's static
+        # (silent/paused) so an idle visualizer barely uses the CPU.
+        wait = min(frame_time * (1 + quiet), 0.25)
+        remaining = wait - (time.monotonic() - frame_start)
         if remaining > 0:
             if interrupt.wait(remaining):
                 return

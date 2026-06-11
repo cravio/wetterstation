@@ -441,7 +441,7 @@ def main() -> None:
                 display, analyzer, gradient_rows,
                 fps=cfg.airplay.fps,
                 interrupt=interrupt,
-                max_duration=0.2,
+                max_duration=1.0,
                 peaks=viz_peaks,
                 peak_color=viz_peak_color,
                 state=viz_render_state,
