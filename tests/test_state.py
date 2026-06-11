@@ -318,6 +318,164 @@ class TestMultipleEvents:
         assert sm.cycles_remaining == 10
 
 
+class TestAirplayTransitions:
+    """Test AIRPLAY_START / AIRPLAY_STOP events and viz suppression."""
+
+    def test_airplay_start_idle_to_viz(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.AIRPLAY_START)
+        sm.process_events()
+        assert sm.state == DisplayState.AUDIO_VIZ
+        assert sm.airplay_active
+
+    def test_airplay_start_during_running_keeps_running(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.START, cycles=10)
+        sm.process_events()
+        sm.send_event(DisplayEvent.AIRPLAY_START)
+        sm.process_events()
+        assert sm.state == DisplayState.RUNNING
+        assert sm.airplay_active
+
+    def test_airplay_start_does_not_interrupt(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.START, cycles=10)
+        sm.process_events()
+        sm.clear_interrupted()
+        sm.send_event(DisplayEvent.AIRPLAY_START)
+        sm.process_events()
+        assert not sm.interrupted
+
+    def test_airplay_stop_viz_to_idle(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.AIRPLAY_START)
+        sm.process_events()
+        sm.send_event(DisplayEvent.AIRPLAY_STOP)
+        sm.process_events()
+        assert sm.state == DisplayState.IDLE
+        assert not sm.airplay_active
+        assert sm.needs_clear
+        assert sm.interrupted
+
+    def test_airplay_stop_during_running_only_clears_flag(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.AIRPLAY_START)
+        sm.send_event(DisplayEvent.START, cycles=10)
+        sm.process_events()
+        sm.send_event(DisplayEvent.AIRPLAY_STOP)
+        sm.process_events()
+        assert sm.state == DisplayState.RUNNING
+        assert not sm.airplay_active
+
+    def test_last_cycle_returns_to_viz_when_streaming(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.AIRPLAY_START)
+        sm.send_event(DisplayEvent.START, cycles=1)
+        sm.process_events()
+        sm.send_event(DisplayEvent.CYCLE_COMPLETE)
+        sm.process_events()
+        assert sm.state == DisplayState.AUDIO_VIZ
+
+    def test_last_cycle_returns_to_idle_without_streaming(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.START, cycles=1)
+        sm.process_events()
+        sm.send_event(DisplayEvent.CYCLE_COMPLETE)
+        sm.process_events()
+        assert sm.state == DisplayState.IDLE
+
+    def test_greeting_complete_returns_to_viz_when_streaming(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.AIRPLAY_START)
+        sm.send_event(DisplayEvent.SHOW_GREETING)
+        sm.process_events()
+        sm.send_event(DisplayEvent.GREETING_COMPLETE)
+        sm.process_events()
+        assert sm.state == DisplayState.AUDIO_VIZ
+
+    def test_transit_complete_returns_to_viz_when_streaming(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.AIRPLAY_START)
+        sm.send_event(DisplayEvent.SHOW_TRANSIT)
+        sm.process_events()
+        sm.send_event(DisplayEvent.TRANSIT_COMPLETE)
+        sm.process_events()
+        assert sm.state == DisplayState.AUDIO_VIZ
+
+    def test_show_events_preempt_viz(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.AIRPLAY_START)
+        sm.process_events()
+        sm.send_event(DisplayEvent.SHOW_TOMORROW, cycles=5)
+        sm.process_events()
+        assert sm.state == DisplayState.TOMORROW
+        assert sm.interrupted
+
+    def test_autostart_preempts_viz(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.AIRPLAY_START)
+        sm.process_events()
+        sm.send_event(DisplayEvent.AUTOSTART, cycles=10)
+        sm.process_events()
+        assert sm.state == DisplayState.RUNNING
+
+    def test_stop_during_viz_suppresses_until_next_session(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.AIRPLAY_START)
+        sm.process_events()
+        sm.send_event(DisplayEvent.STOP)
+        sm.process_events()
+        assert sm.state == DisplayState.IDLE
+        assert sm.viz_suppressed
+        assert sm.needs_clear
+
+    def test_suppressed_viz_stays_dark_after_weather(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.AIRPLAY_START)
+        sm.process_events()
+        sm.send_event(DisplayEvent.STOP)  # suppress viz
+        sm.process_events()
+        sm.send_event(DisplayEvent.START, cycles=1)
+        sm.process_events()
+        sm.send_event(DisplayEvent.CYCLE_COMPLETE)
+        sm.process_events()
+        assert sm.state == DisplayState.IDLE
+
+    def test_new_session_clears_suppression(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.AIRPLAY_START)
+        sm.process_events()
+        sm.send_event(DisplayEvent.STOP)  # suppress
+        sm.process_events()
+        sm.send_event(DisplayEvent.AIRPLAY_STOP)
+        sm.send_event(DisplayEvent.AIRPLAY_START)  # new session
+        sm.process_events()
+        assert sm.state == DisplayState.AUDIO_VIZ
+        assert not sm.viz_suppressed
+
+    def test_stop_from_running_returns_to_viz_when_streaming(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.AIRPLAY_START)
+        sm.send_event(DisplayEvent.START, cycles=10)
+        sm.process_events()
+        sm.send_event(DisplayEvent.STOP)
+        sm.process_events()
+        assert sm.state == DisplayState.AUDIO_VIZ
+        assert sm.needs_clear
+
+    def test_stop_twice_suppresses(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.AIRPLAY_START)
+        sm.send_event(DisplayEvent.START, cycles=10)
+        sm.process_events()
+        sm.send_event(DisplayEvent.STOP)  # running -> viz
+        sm.process_events()
+        sm.send_event(DisplayEvent.STOP)  # viz -> dark
+        sm.process_events()
+        assert sm.state == DisplayState.IDLE
+        assert sm.viz_suppressed
+
+
 class TestClearInterrupted:
     """Test interrupt flag management."""
 

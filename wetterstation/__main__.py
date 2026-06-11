@@ -1,4 +1,5 @@
-"""Wetterstation entry point: python -m wetterstation [--start] [--simulator]
+"""Wetterstation entry point:
+python -m wetterstation [--start] [--simulator] [--viz-demo]
 
 Main loop architecture:
   - All display operations happen in this thread (main thread)
@@ -46,7 +47,7 @@ def create_display(use_simulator: bool):
         from wetterstation.simulator import SimulatorBackend
 
         log.info("Simulator-Modus aktiv")
-        return SimulatorBackend()
+        return SimulatorBackend(render=True)
     else:
         from wetterstation.display import UnicornHATBackend
 
@@ -132,17 +133,21 @@ def autostart_scheduler(
     sm: StateMachine,
     cfg: Config,
     stop_event: threading.Event,
+    window_minutes: int = 30,
 ) -> None:
     """Background thread: activate display at configured time daily."""
     last_triggered_date = None
     while not stop_event.is_set():
         now = datetime.now()
-        target_passed = (
-            now.hour > cfg.autostart.hour
-            or (now.hour == cfg.autostart.hour
-                and now.minute >= cfg.autostart.minute)
+        target = now.replace(
+            hour=cfg.autostart.hour,
+            minute=cfg.autostart.minute,
+            second=0,
+            microsecond=0,
         )
-        if target_passed and last_triggered_date != now.date():
+        elapsed = (now - target).total_seconds()
+        in_window = 0 <= elapsed < window_minutes * 60
+        if in_window and last_triggered_date != now.date():
             log.info(
                 "Autostart: Display aktiviert um %02d:%02d",
                 cfg.autostart.hour,
@@ -150,6 +155,14 @@ def autostart_scheduler(
             )
             sm.send_event(DisplayEvent.AUTOSTART, cycles=cfg.display.display_cycles)
             last_triggered_date = now.date()
+        elif not in_window and last_triggered_date != now.date():
+            last_triggered_date = now.date()
+            log.info(
+                "Autostart: Fenster verpasst (%02d:%02d +%dmin), überspringe",
+                cfg.autostart.hour,
+                cfg.autostart.minute,
+                window_minutes,
+            )
 
         for _ in range(30):
             if stop_event.is_set():
@@ -227,6 +240,39 @@ def main() -> None:
         transit_thread.start()
         log.info("Fahrplan-Fetch gestartet (alle %ds)", cfg.transit.fetch_interval)
 
+    # ── AirPlay Visualizer ──
+    analyzer = None
+    gradient_rows = None
+    viz_peaks = None
+    viz_peak_color = None
+    if cfg.airplay is not None:
+        from wetterstation.airplay import AirplayWatcher
+        from wetterstation.audioviz import (
+            AudioAnalyzer,
+            SweepSource,
+            build_gradient,
+            spectrum_burst,
+        )
+
+        viz_demo = "--viz-demo" in sys.argv
+        if viz_demo:
+            analyzer = AudioAnalyzer(
+                cfg.airplay,
+                source_factory=lambda: SweepSource(realtime=True),
+            )
+            sm.send_event(DisplayEvent.AIRPLAY_START)
+            log.info("Viz-Demo: synthetischer Audio-Sweep aktiv")
+        else:
+            analyzer = AudioAnalyzer(cfg.airplay)
+            watcher = AirplayWatcher(sm, cfg.airplay.flag_file)
+            watcher.start()
+            log.info("AirPlay-Watcher gestartet (%s)", cfg.airplay.flag_file)
+
+        gradient_rows = build_gradient(cfg.airplay.gradient)
+        if cfg.airplay.peak_dot:
+            viz_peaks = [0.0] * display.width
+            viz_peak_color = cfg.airplay.peak_color
+
     # ── Autostart Scheduler ──
     if cfg.autostart.enabled:
         sched_thread = threading.Thread(
@@ -268,9 +314,20 @@ def main() -> None:
     # ── Main Loop ──────────────────────────────────────────────────────
     # ALL display operations happen here in the main thread.
     # No other thread touches the display – ever.
+    airplay_was_active = False
     while True:
         # Process pending events from input threads
         sm.process_events()
+
+        # Start/stop the audio analyzer on airplay_active edges.
+        # It keeps running while weather preempts the visualizer, so the
+        # return to AUDIO_VIZ is instant.
+        if analyzer is not None and sm.airplay_active != airplay_was_active:
+            if sm.airplay_active:
+                analyzer.start()
+            else:
+                analyzer.stop()
+            airplay_was_active = sm.airplay_active
 
         # Handle needs_clear (from STOP event)
         if sm.needs_clear:
@@ -356,6 +413,18 @@ def main() -> None:
             time.sleep(0.01)
             if completed:
                 sm.send_event(DisplayEvent.TRANSIT_COMPLETE)
+            continue
+
+        # ── AUDIO_VIZ ──
+        if state == DisplayState.AUDIO_VIZ:
+            spectrum_burst(
+                display, analyzer, gradient_rows,
+                fps=cfg.airplay.fps,
+                interrupt=interrupt,
+                max_duration=0.2,
+                peaks=viz_peaks,
+                peak_color=viz_peak_color,
+            )
             continue
 
         # ── IDLE ──

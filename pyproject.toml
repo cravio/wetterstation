@@ -11,11 +11,17 @@ dependencies = [
 pi = [
     "unicornhatmini>=0.0.4",
     "RPi.GPIO>=0.7",
+    "numpy>=1.21",
+    "pyalsaaudio>=0.9",
+]
+viz = [
+    "numpy>=1.21",
 ]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "responses>=0.23",
+    "numpy>=1.21",
 ]
 
 [tool.pytest.ini_options]

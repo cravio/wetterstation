@@ -65,6 +65,24 @@ class TransitConfig:
 
 
 @dataclass
+class AirplayConfig:
+    flag_file: str = "/run/shairport-sync/active"
+    capture_device: str = "hw:Loopback,1,0"
+    fps: int = 25
+    freq_min: float = 40.0
+    freq_max: float = 16000.0
+    floor_db: float = -60.0
+    agc: bool = True
+    attack: float = 0.6
+    release: float = 0.12
+    gradient: list[tuple[int, int, int]] = field(
+        default_factory=lambda: [(60, 60, 200), (180, 140, 220), (220, 40, 80)]
+    )
+    peak_dot: bool = True
+    peak_color: tuple[int, int, int] = (160, 160, 230)
+
+
+@dataclass
 class Config:
     location: LocationConfig = field(default_factory=LocationConfig)
     display: DisplayConfig = field(default_factory=DisplayConfig)
@@ -73,6 +91,7 @@ class Config:
     autostart: AutostartConfig = field(default_factory=AutostartConfig)
     colors: ColorsConfig = field(default_factory=ColorsConfig)
     transit: TransitConfig | None = None
+    airplay: AirplayConfig | None = None
 
 
 def _to_tuple(val: list | tuple) -> tuple[int, int, int]:
@@ -159,6 +178,33 @@ def load_config(path: str) -> Config:
             fetch_interval=transit_raw.get("fetch_interval", 60),
         )
 
+    # Airplay config (optional)
+    airplay: AirplayConfig | None = None
+    airplay_raw = raw.get("airplay")
+    if airplay_raw and airplay_raw.get("enabled", False):
+        ap_defaults = AirplayConfig()
+        airplay = AirplayConfig(
+            flag_file=airplay_raw.get("flag_file", ap_defaults.flag_file),
+            capture_device=airplay_raw.get(
+                "capture_device", ap_defaults.capture_device
+            ),
+            fps=airplay_raw.get("fps", ap_defaults.fps),
+            freq_min=airplay_raw.get("freq_min", ap_defaults.freq_min),
+            freq_max=airplay_raw.get("freq_max", ap_defaults.freq_max),
+            floor_db=airplay_raw.get("floor_db", ap_defaults.floor_db),
+            agc=airplay_raw.get("agc", ap_defaults.agc),
+            attack=airplay_raw.get("attack", ap_defaults.attack),
+            release=airplay_raw.get("release", ap_defaults.release),
+            gradient=[
+                _to_tuple(stop)
+                for stop in airplay_raw.get("gradient", ap_defaults.gradient)
+            ],
+            peak_dot=airplay_raw.get("peak_dot", ap_defaults.peak_dot),
+            peak_color=_to_tuple(
+                airplay_raw.get("peak_color", ap_defaults.peak_color)
+            ),
+        )
+
     return Config(
         location=location,
         display=display,
@@ -167,4 +213,5 @@ def load_config(path: str) -> Config:
         autostart=autostart,
         colors=colors,
         transit=transit,
+        airplay=airplay,
     )

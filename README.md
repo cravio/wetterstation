@@ -12,7 +12,8 @@ Zeigt Wetterdaten der [Open-Meteo API](https://open-meteo.com/) als Icons und Sc
 - **4 Hardware-Buttons** (A/B/X/Y) für direkte Steuerung
 - **Fernsteuerung per SSH** über Named Pipe (FIFO)
 - **Simulator-Modus** für Entwicklung ohne Hardware
-- **126 Unit-Tests** mit pytest
+- **AirPlay-2-Receiver** ("wohnzimmer airplay") mit Echtzeit-Spektrum-Visualizer
+- **209 Unit-Tests** mit pytest
 
 ## Hardware
 
@@ -138,6 +139,81 @@ ssh user@hostname "echo x > /tmp/wetterstation.cmd"
 Die `wetterstation.service` muss vor der Installation angepasst werden:
 - `User=` auf den eigenen Benutzer setzen
 - `WorkingDirectory=` auf das Projektverzeichnis setzen
+
+## AirPlay Visualizer
+
+Die Wetterstation ist gleichzeitig AirPlay-2-Receiver (**"wohnzimmer airplay"**,
+shairport-sync). Der Ton geht über einen USB-DAC; wenn ein Stream läuft und die
+Anzeige sonst idle ist, zeigt die Matrix einen Spektrum-Visualizer
+(17 Frequenzbänder 40 Hz–16 kHz, Gradient Blau→Lila→Pink, Peak-Dots).
+
+**Priorität:** Buttons und Autostart gewinnen immer — Wetter/Fahrplan/Gruss
+laufen wie gewohnt und kehren danach zum Visualizer zurück, solange der Stream
+aktiv ist. Ein Knopfdruck während des Visualizers schaltet ihn dunkel bis zur
+nächsten AirPlay-Session.
+
+### Setup (auf dem Pi)
+
+```bash
+./deploy/setup_airplay.sh "wohnzimmer airplay"
+```
+
+Das Script baut nqptp + shairport-sync (AirPlay 2) aus Source
+(**Zero 2 W: 30–60 Min**), lädt das ALSA-Loopback-Modul, erkennt den USB-DAC
+per Name und installiert alle Configs. Architektur:
+
+```
+shairport-sync ──► airplay_out (ALSA plug/multi) ──► USB-DAC (Ton)
+                                       └──────────► Loopback ──► wetterstation (FFT)
+sessioncontrol-Hooks ──► /run/shairport-sync/active ──► AirplayWatcher ──► State Machine
+```
+
+Stirbt wetterstation, läuft die Musik weiter (Audio-Pfad ist rein ALSA/Kernel).
+Das Flag-File liegt in systemds `RuntimeDirectory` und kann nicht veralten.
+
+### Konfiguration (`config.json`)
+
+```json
+"airplay": {
+  "enabled": true,
+  "flag_file": "/run/shairport-sync/active",
+  "capture_device": "hw:Loopback,1,0",
+  "fps": 25,
+  "freq_min": 40,
+  "freq_max": 16000,
+  "floor_db": -60,
+  "agc": true,
+  "attack": 0.6,
+  "release": 0.12,
+  "gradient": [[60, 60, 200], [180, 140, 220], [220, 40, 80]],
+  "peak_dot": true,
+  "peak_color": [160, 160, 230]
+}
+```
+
+`"enabled": false` oder fehlende Sektion → Verhalten exakt wie bisher.
+
+### Entwicklung am Mac
+
+```bash
+python3 -m wetterstation --simulator --viz-demo   # synthetischer Frequenz-Sweep
+```
+
+### Verifikation auf dem Pi
+
+```bash
+speaker-test -D airplay_out -c2 -twav -l1                              # Ton-Kette
+arecord -D hw:Loopback,1,0 -f S16_LE -r 44100 -c 2 -d 3 /dev/null -vv  # Tap (VU-Meter)
+cat /run/shairport-sync/active                                          # Flag bei Stream
+journalctl -u wetterstation -f                                          # → AUDIO_VIZ Logs
+```
+
+### Troubleshooting
+
+- **DAC-Name prüfen:** `aplay -l` — der Kartenname gehört in `/etc/asound.conf` (`card "..."`)
+- **Mixer (Hardware-Volume):** `amixer -c <karte>` — falls vorhanden, `mixer_control_name` in `/etc/shairport-sync.conf` ergänzen
+- **Loopback fehlt:** `lsmod | grep aloop`, ggf. `sudo modprobe snd-aloop index=7`
+- **Permission denied beim Capture:** wetterstation-User braucht die `audio`-Gruppe (`SupplementaryGroups=audio` im Service)
 
 ## Architektur
 

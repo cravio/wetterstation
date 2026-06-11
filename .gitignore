@@ -7,3 +7,4 @@ build/
 *.egg
 .env
 config.json
+.coverage

@@ -141,3 +141,43 @@ class TestTransitConfig:
         f.write_text(json.dumps({"transit": {"stations": []}}))
         cfg = load_config(str(f))
         assert cfg.transit is None
+
+
+class TestAirplayConfig:
+    """Test airplay configuration loading."""
+
+    def test_no_airplay_returns_none(self, tmp_path):
+        f = tmp_path / "cfg.json"
+        f.write_text("{}")
+        cfg = load_config(str(f))
+        assert cfg.airplay is None
+
+    def test_disabled_airplay_returns_none(self, tmp_path):
+        f = tmp_path / "cfg.json"
+        f.write_text(json.dumps({"airplay": {"enabled": False, "fps": 30}}))
+        cfg = load_config(str(f))
+        assert cfg.airplay is None
+
+    def test_airplay_loads_from_sample(self, config_file):
+        cfg = load_config(config_file)
+        assert cfg.airplay is not None
+        assert cfg.airplay.flag_file == "/run/shairport-sync/active"
+        assert cfg.airplay.capture_device == "hw:Loopback,1,0"
+        assert cfg.airplay.fps == 25
+        assert cfg.airplay.peak_dot is True
+
+    def test_airplay_partial_uses_defaults(self, tmp_path):
+        f = tmp_path / "cfg.json"
+        f.write_text(json.dumps({"airplay": {"enabled": True, "fps": 30}}))
+        cfg = load_config(str(f))
+        assert cfg.airplay is not None
+        assert cfg.airplay.fps == 30
+        assert cfg.airplay.floor_db == -60.0  # default
+        assert cfg.airplay.attack == 0.6  # default
+
+    def test_airplay_gradient_lists_become_tuples(self, config_file):
+        cfg = load_config(config_file)
+        assert all(isinstance(stop, tuple) for stop in cfg.airplay.gradient)
+        assert cfg.airplay.gradient[0] == (60, 60, 200)
+        assert isinstance(cfg.airplay.peak_color, tuple)
+        assert cfg.airplay.peak_color == (160, 160, 230)

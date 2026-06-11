@@ -16,12 +16,13 @@ log = logging.getLogger("wetterstation")
 class DisplayState(Enum):
     """Display operating states."""
 
-    IDLE = auto()      # Display off, waiting for input
-    RUNNING = auto()   # Weather display cycle active
-    GREETING = auto()  # Showing greeting sequence
-    INFO = auto()      # Showing info (location + update time)
-    TOMORROW = auto()  # Weather forecast for tomorrow
-    TRANSIT = auto()   # Showing transit departures
+    IDLE = auto()       # Display off, waiting for input
+    RUNNING = auto()    # Weather display cycle active
+    GREETING = auto()   # Showing greeting sequence
+    INFO = auto()       # Showing info (location + update time)
+    TOMORROW = auto()   # Weather forecast for tomorrow
+    TRANSIT = auto()    # Showing transit departures
+    AUDIO_VIZ = auto()  # Audio spectrum visualizer (AirPlay streaming)
 
 
 class DisplayEvent(Enum):
@@ -39,6 +40,8 @@ class DisplayEvent(Enum):
     TOMORROW_COMPLETE = auto()  # Tomorrow forecast finished
     TRANSIT_COMPLETE = auto()  # Transit display finished
     AUTOSTART = auto()        # Scheduled autostart
+    AIRPLAY_START = auto()    # AirPlay stream became active
+    AIRPLAY_STOP = auto()     # AirPlay stream ended
 
 
 class StateMachine:
@@ -53,6 +56,8 @@ class StateMachine:
         self._cycles_remaining = 0
         self._interrupted = False
         self._needs_clear = False
+        self._airplay_active = False
+        self._viz_suppressed = False
         self._interrupt_event = interrupt  # threading.Event to abort animations
         self._event_queue: queue.Queue[tuple[DisplayEvent, dict[str, Any]]] = (
             queue.Queue()
@@ -74,6 +79,14 @@ class StateMachine:
     def needs_clear(self) -> bool:
         return self._needs_clear
 
+    @property
+    def airplay_active(self) -> bool:
+        return self._airplay_active
+
+    @property
+    def viz_suppressed(self) -> bool:
+        return self._viz_suppressed
+
     def clear_interrupted(self) -> None:
         """Clear the interrupted flag (call from main thread after handling)."""
         self._interrupted = False
@@ -91,6 +104,7 @@ class StateMachine:
         DisplayEvent.SHOW_TOMORROW,
         DisplayEvent.SHOW_TRANSIT,
         DisplayEvent.AUTOSTART,
+        DisplayEvent.AIRPLAY_STOP,
     })
 
     def send_event(self, event: DisplayEvent, **kwargs: Any) -> None:
@@ -124,6 +138,13 @@ class StateMachine:
         if self._interrupt_event is not None:
             self._interrupt_event.set()
 
+    def _idle_or_viz(self) -> DisplayState:
+        """Where to go when a display finishes: visualizer if AirPlay
+        streams (and not suppressed by a button press), else idle."""
+        if self._airplay_active and not self._viz_suppressed:
+            return DisplayState.AUDIO_VIZ
+        return DisplayState.IDLE
+
     def _handle_event(
         self, event: DisplayEvent, kwargs: dict[str, Any]
     ) -> None:
@@ -136,11 +157,16 @@ class StateMachine:
             log.info("→ RUNNING (%d Zyklen)", cycles)
 
         elif event == DisplayEvent.STOP:
-            self._state = DisplayState.IDLE
+            if self._state == DisplayState.AUDIO_VIZ:
+                # Button press during visualizer: dark until next session
+                self._viz_suppressed = True
+                self._state = DisplayState.IDLE
+            else:
+                self._state = self._idle_or_viz()
             self._cycles_remaining = 0
             self._set_interrupted()
             self._needs_clear = True
-            log.info("→ IDLE (Stop)")
+            log.info("→ %s (Stop)", self._state.name)
 
         elif event == DisplayEvent.SHOW_GREETING:
             self._state = DisplayState.GREETING
@@ -168,27 +194,46 @@ class StateMachine:
             if self._cycles_remaining > 0:
                 self._cycles_remaining -= 1
                 if self._cycles_remaining == 0:
-                    self._state = DisplayState.IDLE
-                    log.info("→ IDLE (alle Zyklen abgeschlossen)")
+                    self._state = self._idle_or_viz()
+                    log.info("→ %s (alle Zyklen abgeschlossen)", self._state.name)
 
         elif event == DisplayEvent.GREETING_COMPLETE:
-            self._state = DisplayState.IDLE
-            log.info("→ IDLE (Gruss fertig)")
+            self._state = self._idle_or_viz()
+            log.info("→ %s (Gruss fertig)", self._state.name)
 
         elif event == DisplayEvent.INFO_COMPLETE:
-            self._state = DisplayState.IDLE
-            log.info("→ IDLE (Info fertig)")
+            self._state = self._idle_or_viz()
+            log.info("→ %s (Info fertig)", self._state.name)
 
         elif event == DisplayEvent.TOMORROW_COMPLETE:
-            self._state = DisplayState.IDLE
-            log.info("→ IDLE (Morgen fertig)")
+            self._state = self._idle_or_viz()
+            log.info("→ %s (Morgen fertig)", self._state.name)
 
         elif event == DisplayEvent.TRANSIT_COMPLETE:
-            self._state = DisplayState.IDLE
-            log.info("→ IDLE (Fahrplan fertig)")
+            self._state = self._idle_or_viz()
+            log.info("→ %s (Fahrplan fertig)", self._state.name)
 
         elif event == DisplayEvent.AUTOSTART:
             self._state = DisplayState.RUNNING
             self._cycles_remaining = kwargs.get("cycles", 10)
             self._set_interrupted()
             log.info("→ RUNNING (%s Zyklen, Autostart)", self._cycles_remaining)
+
+        elif event == DisplayEvent.AIRPLAY_START:
+            self._airplay_active = True
+            self._viz_suppressed = False  # new session resets suppression
+            if self._state == DisplayState.IDLE:
+                self._state = DisplayState.AUDIO_VIZ
+                log.info("→ AUDIO_VIZ (AirPlay aktiv)")
+            else:
+                log.info("AirPlay aktiv (Anzeige hat Vorrang)")
+
+        elif event == DisplayEvent.AIRPLAY_STOP:
+            self._airplay_active = False
+            if self._state == DisplayState.AUDIO_VIZ:
+                self._state = DisplayState.IDLE
+                self._set_interrupted()
+                self._needs_clear = True
+                log.info("→ IDLE (AirPlay beendet)")
+            else:
+                log.info("AirPlay beendet")
