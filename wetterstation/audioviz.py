@@ -364,6 +364,7 @@ def spectrum_burst(
     max_duration: float = 0.2,
     peaks: list[float] | None = None,
     peak_color: Color | None = None,
+    state: dict | None = None,
 ) -> None:
     """Render spectrum frames for at most max_duration seconds.
 
@@ -371,10 +372,17 @@ def spectrum_burst(
     AUDIO_VIZ state persists until an event replaces it. Checks the
     interrupt every frame, like all other animations.
 
+    Only pushes a frame to the display when the rendered picture actually
+    changes (frame-diffing). When the audio is silent/paused every frame is
+    identical, so the expensive SPI show() is skipped and CPU/heat stay low.
+
     Args:
         peaks: Mutable per-band peak positions (rows), updated in place
             across bursts. None disables peak dots.
+        state: Mutable dict carrying the last drawn signature across calls
+            (owned by the caller). None disables frame-diffing.
     """
+    height = display.height
     frame_time = 1.0 / fps
     end = time.monotonic() + max_duration
     while time.monotonic() < end:
@@ -384,12 +392,25 @@ def spectrum_burst(
         bands = analyzer.bands
         if peaks is not None:
             for x in range(min(len(bands), len(peaks))):
-                h = bands[x] * display.height
+                h = bands[x] * height
                 if h > peaks[x]:
                     peaks[x] = h
                 else:
                     peaks[x] = max(0.0, peaks[x] - 0.5)
-        draw_spectrum(display, bands, gradient_rows, peaks, peak_color)
+
+        # Signature of what would be drawn; skip the redraw if unchanged.
+        n = min(len(bands), display.width)
+        heights = tuple(round(bands[x] * height) for x in range(n))
+        peak_sig = (
+            tuple(min(int(peaks[x]), height - 1) for x in range(n))
+            if peaks is not None else None
+        )
+        sig = (heights, peak_sig)
+        if state is None or sig != state.get("sig"):
+            draw_spectrum(display, bands, gradient_rows, peaks, peak_color)
+            if state is not None:
+                state["sig"] = sig
+
         remaining = frame_time - (time.monotonic() - frame_start)
         if remaining > 0:
             if interrupt.wait(remaining):

@@ -213,6 +213,53 @@ class TestSpectrumBurst:
         assert display.show_count >= 2
 
 
+class _FixedAnalyzer:
+    """Analyzer stub returning constant bands (for frame-diff tests)."""
+
+    def __init__(self, bands):
+        self._bands = bands
+
+    @property
+    def bands(self):
+        return list(self._bands)
+
+
+class TestFrameDiffing:
+    def test_state_skips_unchanged_frames(self):
+        display = SimulatorBackend()
+        gradient = build_gradient([(60, 60, 200), (220, 40, 80)])
+        analyzer = _FixedAnalyzer([0.5] * 17)
+        state = {}
+        spectrum_burst(display, analyzer, gradient, fps=100,
+                       interrupt=threading.Event(), max_duration=0.15,
+                       state=state)
+        # Constant bands → draw once, skip the rest.
+        assert display.show_count == 1
+
+    def test_without_state_draws_every_frame(self):
+        display = SimulatorBackend()
+        gradient = build_gradient([(60, 60, 200), (220, 40, 80)])
+        analyzer = _FixedAnalyzer([0.5] * 17)
+        spectrum_burst(display, analyzer, gradient, fps=100,
+                       interrupt=threading.Event(), max_duration=0.15)
+        assert display.show_count >= 3
+
+    def test_state_redraws_on_change(self):
+        display = SimulatorBackend()
+        gradient = build_gradient([(60, 60, 200), (220, 40, 80)])
+        analyzer = _FixedAnalyzer([0.5] * 17)
+        state = {}
+        spectrum_burst(display, analyzer, gradient, fps=100,
+                       interrupt=threading.Event(), max_duration=0.05,
+                       state=state)
+        first = display.show_count
+        analyzer._bands = [1.0] * 17  # picture changes
+        spectrum_burst(display, analyzer, gradient, fps=100,
+                       interrupt=threading.Event(), max_duration=0.05,
+                       state=state)
+        assert display.show_count > first
+
+
 class TestAudioAnalyzer:
     def test_produces_bands(self):
         cfg = AirplayConfig()

@@ -237,6 +237,7 @@ class StateMachine:
             self._viz_suppressed = False  # new session resets suppression
             if self._state == DisplayState.IDLE:
                 self._state = DisplayState.AUDIO_VIZ
+                self._set_interrupted()
                 log.info("→ AUDIO_VIZ (AirPlay aktiv)")
             else:
                 log.info("AirPlay aktiv (Anzeige hat Vorrang)")

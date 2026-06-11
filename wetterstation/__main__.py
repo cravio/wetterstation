@@ -316,6 +316,7 @@ def main() -> None:
     # No other thread touches the display – ever.
     viz_was_wanted = False
     applied_brightness = cfg.display.brightness
+    viz_render_state: dict = {}  # carries last drawn frame for frame-diffing
     while True:
         # Process pending events from input threads
         sm.process_events()
@@ -336,10 +337,12 @@ def main() -> None:
             display.clear()
             display.show()
             time.sleep(0.01)
+            viz_render_state.pop("sig", None)  # display blanked → force redraw
 
         # Handle interrupted (from any state change)
         if sm.interrupted:
             sm.clear_interrupted()
+            viz_render_state.pop("sig", None)  # state changed → force redraw
 
         # Clear interrupt AFTER processing events so animations start fresh
         interrupt.clear()
@@ -441,6 +444,7 @@ def main() -> None:
                 max_duration=0.2,
                 peaks=viz_peaks,
                 peak_color=viz_peak_color,
+                state=viz_render_state,
             )
             continue
 
