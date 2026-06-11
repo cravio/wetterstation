@@ -200,8 +200,13 @@ class AlsaSource:
         length, data = self._pcm.read()
         if length <= 0 or not data:
             return None
-        samples = np.frombuffer(data, dtype=np.int16).astype(np.float32)
-        samples /= 32768.0
+        raw = np.frombuffer(data, dtype=np.int16)
+        # Cheap digital-silence check on the raw buffer: skip the float
+        # conversion entirely when the stream is feeding zeros (paused/idle
+        # AirPlay session), so the analyzer barely uses the CPU when quiet.
+        if not raw.any():
+            return np.zeros(length, dtype=np.float32)
+        samples = raw.astype(np.float32) / 32768.0
         # Interleaved stereo -> mono
         return (samples[0::2] + samples[1::2]) * 0.5
 
