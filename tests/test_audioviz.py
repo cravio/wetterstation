@@ -164,6 +164,27 @@ class TestDrawSpectrum:
         assert display.get_pixel(0, 6) == gradient[0]   # bottom row
         assert display.get_pixel(0, 0) == gradient[6]   # top row
 
+    def test_fewer_bands_span_multiple_columns(self):
+        # 8 bands across 17 columns → each bar ~2px wide, full width used.
+        display = SimulatorBackend()
+        gradient = build_gradient([(60, 60, 200), (220, 40, 80)])
+        bands = [1.0] * 8
+        draw_spectrum(display, bands, gradient)
+        # Every column should be lit (bars tile the whole width).
+        lit_cols = sum(
+            1 for x in range(17) if display.get_pixel(x, 6) != (0, 0, 0)
+        )
+        assert lit_cols == 17
+
+    def test_single_band_spans_left_columns(self):
+        display = SimulatorBackend()
+        gradient = build_gradient([(60, 60, 200), (220, 40, 80)])
+        bands = [1.0] + [0.0] * 7  # only first of 8 bands
+        draw_spectrum(display, bands, gradient)
+        # First band occupies columns 0..~1; column 0 lit, far right dark.
+        assert display.get_pixel(0, 6) != (0, 0, 0)
+        assert display.get_pixel(16, 6) == (0, 0, 0)
+
     def test_peak_dot_drawn(self):
         display = SimulatorBackend()
         gradient = build_gradient([(60, 60, 200), (220, 40, 80)])

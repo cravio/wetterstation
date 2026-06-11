@@ -74,8 +74,9 @@ class AirplayConfig:
     floor_db: float = -60.0
     agc: bool = True
     noise_gate: float = 0.004  # peak below this (~-48 dBFS) → bars dark
-    attack: float = 0.35
-    release: float = 0.10
+    attack: float = 0.30
+    release: float = 0.05
+    bands: int = 8  # frequency bands across the 17px width (~2px per bar)
     brightness: float = 0.2  # dimmer than weather display (less heat)
     gradient: list[tuple[int, int, int]] = field(
         default_factory=lambda: [(60, 60, 200), (180, 140, 220), (220, 40, 80)]
@@ -198,6 +199,7 @@ def load_config(path: str) -> Config:
             noise_gate=airplay_raw.get("noise_gate", ap_defaults.noise_gate),
             attack=airplay_raw.get("attack", ap_defaults.attack),
             release=airplay_raw.get("release", ap_defaults.release),
+            bands=airplay_raw.get("bands", ap_defaults.bands),
             brightness=airplay_raw.get("brightness", ap_defaults.brightness),
             gradient=[
                 _to_tuple(stop)

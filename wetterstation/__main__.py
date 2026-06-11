@@ -259,18 +259,19 @@ def main() -> None:
             analyzer = AudioAnalyzer(
                 cfg.airplay,
                 source_factory=lambda: SweepSource(realtime=True),
+                n_bands=cfg.airplay.bands,
             )
             sm.send_event(DisplayEvent.AIRPLAY_START)
             log.info("Viz-Demo: synthetischer Audio-Sweep aktiv")
         else:
-            analyzer = AudioAnalyzer(cfg.airplay)
+            analyzer = AudioAnalyzer(cfg.airplay, n_bands=cfg.airplay.bands)
             watcher = AirplayWatcher(sm, cfg.airplay.flag_file)
             watcher.start()
             log.info("AirPlay-Watcher gestartet (%s)", cfg.airplay.flag_file)
 
         gradient_rows = build_gradient(cfg.airplay.gradient)
         if cfg.airplay.peak_dot:
-            viz_peaks = [0.0] * display.width
+            viz_peaks = [0.0] * cfg.airplay.bands
             viz_peak_color = cfg.airplay.peak_color
 
     # ── Autostart Scheduler ──

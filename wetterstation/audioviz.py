@@ -361,22 +361,30 @@ def draw_spectrum(
     peaks: list[float] | None = None,
     peak_color: Color | None = None,
 ) -> None:
-    """Draw one spectrum frame: one bar per band, bottom-up.
+    """Draw one spectrum frame: each band spans one or more columns.
+
+    The bands are distributed evenly across the full display width, so
+    fewer-than-width bands render as wider bars (e.g. 8 bands → ~2px each).
 
     Note: y=0 is the TOP row of the display, so a bar of height h lights
     pixels y = H-1 .. H-h, colored by gradient_rows[row_from_bottom].
     """
     display.clear()
     height = display.height
-    for x in range(min(len(bands), display.width)):
-        lit = round(bands[x] * height)
-        for row in range(lit):
-            r, g, b = gradient_rows[row]
-            display.set_pixel(x, height - 1 - row, r, g, b)
-        if peaks is not None and peak_color is not None:
-            pk = min(int(peaks[x]), height - 1)
-            if pk >= lit and pk > 0:
-                display.set_pixel(x, height - 1 - pk, *peak_color)
+    width = display.width
+    n = len(bands)
+    for i in range(n):
+        c0 = round(i * width / n)
+        c1 = round((i + 1) * width / n)
+        lit = round(bands[i] * height)
+        for col in range(c0, c1):
+            for row in range(lit):
+                r, g, b = gradient_rows[row]
+                display.set_pixel(col, height - 1 - row, r, g, b)
+            if peaks is not None and peak_color is not None:
+                pk = min(int(peaks[i]), height - 1)
+                if pk >= lit and pk > 0:
+                    display.set_pixel(col, height - 1 - pk, *peak_color)
     display.show()
 
 
