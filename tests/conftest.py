@@ -28,6 +28,7 @@ def sample_config() -> dict:
             "freq_max": 16000,
             "floor_db": -60,
             "agc": True,
+            "noise_gate": 0.004,
             "attack": 0.35,
             "release": 0.1,
             "brightness": 0.2,

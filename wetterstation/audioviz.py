@@ -124,10 +124,11 @@ class SpectrumProcessor:
             self._ring[:-n] = self._ring[n:]
             self._ring[-n:] = mono
 
-        # Silence short-circuit: skip the FFT entirely on (near-)zero input
-        # (e.g. the loopback feeding silence while nothing streams). Just
-        # let the bars decay. This keeps the analyzer near-idle when quiet.
-        if float(np.abs(mono).max()) < 1e-4:
+        # Noise gate: below this peak level (silence, dither, or a
+        # connected-but-silent AirPlay session) skip the FFT and let the
+        # bars decay to dark. Stops the AGC from amplifying the noise floor
+        # into jittery bars, and keeps the analyzer near-idle when quiet.
+        if float(np.abs(mono).max()) < self._cfg.noise_gate:
             self._values *= 1.0 - self._cfg.release
             return self._values.copy()
 

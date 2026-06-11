@@ -73,6 +73,7 @@ class AirplayConfig:
     freq_max: float = 16000.0
     floor_db: float = -60.0
     agc: bool = True
+    noise_gate: float = 0.004  # peak below this (~-48 dBFS) → bars dark
     attack: float = 0.35
     release: float = 0.10
     brightness: float = 0.2  # dimmer than weather display (less heat)
@@ -194,6 +195,7 @@ def load_config(path: str) -> Config:
             freq_max=airplay_raw.get("freq_max", ap_defaults.freq_max),
             floor_db=airplay_raw.get("floor_db", ap_defaults.floor_db),
             agc=airplay_raw.get("agc", ap_defaults.agc),
+            noise_gate=airplay_raw.get("noise_gate", ap_defaults.noise_gate),
             attack=airplay_raw.get("attack", ap_defaults.attack),
             release=airplay_raw.get("release", ap_defaults.release),
             brightness=airplay_raw.get("brightness", ap_defaults.brightness),
