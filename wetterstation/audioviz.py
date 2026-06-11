@@ -160,12 +160,15 @@ class AudioSource(Protocol):
 class AlsaSource:
     """Capture from an ALSA device (loopback mirror of the AirPlay output)."""
 
-    def __init__(self, device: str = "hw:Loopback,1,0") -> None:
+    def __init__(self, device: str = "plughw:Loopback,1,0") -> None:
         import alsaaudio
 
+        # Non-blocking: read() returns no data (instead of blocking forever)
+        # when nothing is streaming into the loopback. The analyzer sleeps
+        # briefly on empty reads, so it never busy-spins and stop() is clean.
         self._pcm = alsaaudio.PCM(
             alsaaudio.PCM_CAPTURE,
-            alsaaudio.PCM_NORMAL,
+            alsaaudio.PCM_NONBLOCK,
             device=device,
             channels=2,
             rate=SAMPLE_RATE,
@@ -175,7 +178,7 @@ class AlsaSource:
 
     def read(self) -> np.ndarray | None:
         length, data = self._pcm.read()
-        if length <= 0:
+        if length <= 0 or not data:
             return None
         samples = np.frombuffer(data, dtype=np.int16).astype(np.float32)
         samples /= 32768.0
@@ -309,6 +312,9 @@ class AudioAnalyzer:
                 source = None
                 continue
             if chunk is None or len(chunk) == 0:
+                # No data (e.g. visualizer on but nothing streaming into the
+                # loopback). Sleep briefly so we never busy-spin a CPU core.
+                self._stop.wait(0.01)
                 continue
             values = processor.process(chunk)
             with self._lock:
