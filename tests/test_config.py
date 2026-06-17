@@ -163,7 +163,7 @@ class TestAirplayConfig:
         assert cfg.airplay is not None
         assert cfg.airplay.flag_file == "/run/shairport-sync/active"
         assert cfg.airplay.capture_device == "plughw:Loopback,1,0"
-        assert cfg.airplay.fps == 25
+        assert cfg.airplay.fps == 15
         assert cfg.airplay.peak_dot is True
 
     def test_airplay_partial_uses_defaults(self, tmp_path):

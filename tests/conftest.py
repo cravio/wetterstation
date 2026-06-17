@@ -23,7 +23,7 @@ def sample_config() -> dict:
             "enabled": True,
             "flag_file": "/run/shairport-sync/active",
             "capture_device": "plughw:Loopback,1,0",
-            "fps": 25,
+            "fps": 15,
             "freq_min": 40,
             "freq_max": 16000,
             "floor_db": -60,

@@ -68,7 +68,7 @@ class TransitConfig:
 class AirplayConfig:
     flag_file: str = "/run/shairport-sync/active"
     capture_device: str = "plughw:Loopback,1,0"
-    fps: int = 25
+    fps: int = 15  # lower = less CPU/power; plenty smooth on a 7px display
     freq_min: float = 40.0
     freq_max: float = 16000.0
     floor_db: float = -60.0
