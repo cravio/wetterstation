@@ -170,6 +170,37 @@ def autostart_scheduler(
             time.sleep(1)
 
 
+def quiet_hours_scheduler(
+    sm: StateMachine,
+    cfg: Config,
+    stop_event: threading.Event,
+) -> None:
+    """Background thread: toggle night mode at the configured window.
+
+    Edge-detected: sends QUIET_ON on entering the window, QUIET_OFF on
+    leaving. Reports the current state at startup (resync after a restart).
+    """
+    from wetterstation.config import in_quiet_hours
+
+    q = cfg.quiet_hours
+    was_quiet = None  # force an initial event on first iteration
+    while not stop_event.is_set():
+        is_quiet = in_quiet_hours(datetime.now().hour, q.start, q.end)
+        if is_quiet != was_quiet:
+            if is_quiet:
+                log.info("Nachtruhe: %02d–%02d Uhr, Display dunkel "
+                         "(Musik überschreibt)", q.start, q.end)
+                sm.send_event(DisplayEvent.QUIET_ON)
+            else:
+                sm.send_event(DisplayEvent.QUIET_OFF)
+            was_quiet = is_quiet
+
+        for _ in range(30):
+            if stop_event.is_set():
+                return
+            time.sleep(1)
+
+
 def main() -> None:
     setup_logging()
 
@@ -286,6 +317,20 @@ def main() -> None:
             "Autostart geplant für %02d:%02d",
             cfg.autostart.hour,
             cfg.autostart.minute,
+        )
+
+    # ── Quiet Hours (Nachtruhe) Scheduler ──
+    if cfg.quiet_hours.enabled:
+        quiet_thread = threading.Thread(
+            target=quiet_hours_scheduler,
+            args=(sm, cfg, stop_event),
+            daemon=True,
+        )
+        quiet_thread.start()
+        log.info(
+            "Nachtruhe aktiv: %02d–%02d Uhr",
+            cfg.quiet_hours.start,
+            cfg.quiet_hours.end,
         )
 
     # ── Startup Info ──

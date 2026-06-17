@@ -534,6 +534,65 @@ class TestToggleViz:
         assert sm.viz_wanted
 
 
+class TestQuietHours:
+    """Test QUIET_ON / QUIET_OFF night mode."""
+
+    def test_quiet_on_darkens_weather(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.START, cycles=10)
+        sm.process_events()
+        sm.send_event(DisplayEvent.QUIET_ON)
+        sm.process_events()
+        assert sm.state == DisplayState.IDLE
+        assert sm.quiet_mode
+        assert sm.needs_clear
+
+    def test_quiet_on_leaves_music_running(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.AIRPLAY_START)
+        sm.process_events()
+        assert sm.state == DisplayState.AUDIO_VIZ
+        sm.send_event(DisplayEvent.QUIET_ON)
+        sm.process_events()
+        assert sm.state == DisplayState.AUDIO_VIZ  # music overrides night mode
+
+    def test_music_overrides_during_quiet(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.QUIET_ON)
+        sm.process_events()
+        assert sm.state == DisplayState.IDLE
+        sm.send_event(DisplayEvent.AIRPLAY_START)
+        sm.process_events()
+        assert sm.state == DisplayState.AUDIO_VIZ  # plays even at night
+
+    def test_autostart_suppressed_during_quiet(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.QUIET_ON)
+        sm.process_events()
+        sm.send_event(DisplayEvent.AUTOSTART, cycles=10)
+        sm.process_events()
+        assert sm.state == DisplayState.IDLE  # no weather at night
+
+    def test_manual_button_still_works_during_quiet(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.QUIET_ON)
+        sm.process_events()
+        sm.send_event(DisplayEvent.START, cycles=10)  # user presses A
+        sm.process_events()
+        assert sm.state == DisplayState.RUNNING
+
+    def test_quiet_off_clears_flag(self):
+        sm = StateMachine()
+        sm.send_event(DisplayEvent.QUIET_ON)
+        sm.process_events()
+        sm.send_event(DisplayEvent.QUIET_OFF)
+        sm.process_events()
+        assert not sm.quiet_mode
+        sm.send_event(DisplayEvent.AUTOSTART, cycles=10)
+        sm.process_events()
+        assert sm.state == DisplayState.RUNNING  # autostart works again
+
+
 class TestClearInterrupted:
     """Test interrupt flag management."""
 

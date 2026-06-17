@@ -19,6 +19,7 @@ def sample_config() -> dict:
         "fetch_interval": 1800,
         "greeting_text": "Hallo, heute wird es {t_max} Grad warm!",
         "autostart": {"enabled": True, "hour": 7, "minute": 0},
+        "quiet_hours": {"enabled": True, "start": 0, "end": 6},
         "airplay": {
             "enabled": True,
             "flag_file": "/run/shairport-sync/active",

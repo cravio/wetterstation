@@ -140,6 +140,26 @@ Die `wetterstation.service` muss vor der Installation angepasst werden:
 - `User=` auf den eigenen Benutzer setzen
 - `WorkingDirectory=` auf das Projektverzeichnis setzen
 
+## Nachtruhe
+
+Optionaler Nachtmodus: Im konfigurierten Zeitfenster bleibt das Display
+dunkel und es startet nichts automatisch (auch der Autostart wird
+unterdrückt). **AirPlay-Musik überschreibt das jederzeit** — spielt etwas,
+läuft der Visualizer wie gewohnt. Um `end` Uhr endet die Ruhephase von selbst.
+
+```json
+"quiet_hours": {
+  "enabled": true,
+  "start": 0,
+  "end": 6
+}
+```
+
+`start`/`end` sind Stunden (0–23); `start > end` umschliesst Mitternacht
+(z.B. `22`–`6`). `start == end` deaktiviert das Fenster. Hinweis: Der Pi
+läuft durch (er kann sich mangels RTC nicht selbst wieder einschalten);
+gespart wird v.a. LED-Strom, nicht die Grundlast des SoC.
+
 ## AirPlay Visualizer
 
 Die Wetterstation ist gleichzeitig AirPlay-2-Receiver (**"wohnzimmer airplay"**,

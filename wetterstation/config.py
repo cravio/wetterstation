@@ -33,6 +33,29 @@ class AutostartConfig:
 
 
 @dataclass
+class QuietHoursConfig:
+    """Night mode: display stays dark and nothing auto-starts during the
+    window. AirPlay music still overrides (visualizer runs)."""
+    enabled: bool = False
+    start: int = 0  # hour [0-23], inclusive
+    end: int = 6    # hour [0-23], exclusive
+
+
+def in_quiet_hours(hour: int, start: int, end: int) -> bool:
+    """True if `hour` falls in the quiet window, handling midnight wrap.
+
+    start == end → window disabled (never quiet).
+    start < end  → [start, end)            e.g. 0..6
+    start > end  → wraps midnight: [start, 24) ∪ [0, end)  e.g. 22..6
+    """
+    if start == end:
+        return False
+    if start < end:
+        return start <= hour < end
+    return hour >= start or hour < end
+
+
+@dataclass
 class ColorsConfig:
     sun: tuple[int, int, int] = (220, 40, 80)
     cloud: tuple[int, int, int] = (180, 140, 220)
@@ -92,6 +115,7 @@ class Config:
     fetch_interval: int = 1800
     greeting_text: str = "Hallo! Heute wird es {t_max}°C warm."
     autostart: AutostartConfig = field(default_factory=AutostartConfig)
+    quiet_hours: QuietHoursConfig = field(default_factory=QuietHoursConfig)
     colors: ColorsConfig = field(default_factory=ColorsConfig)
     transit: TransitConfig | None = None
     airplay: AirplayConfig | None = None
@@ -143,6 +167,13 @@ def load_config(path: str) -> Config:
         enabled=auto_raw.get("enabled", AutostartConfig.enabled),
         hour=auto_raw.get("hour", AutostartConfig.hour),
         minute=auto_raw.get("minute", AutostartConfig.minute),
+    )
+
+    quiet_raw = raw.get("quiet_hours", {})
+    quiet_hours = QuietHoursConfig(
+        enabled=quiet_raw.get("enabled", QuietHoursConfig.enabled),
+        start=quiet_raw.get("start", QuietHoursConfig.start),
+        end=quiet_raw.get("end", QuietHoursConfig.end),
     )
 
     colors_raw = raw.get("colors", {})
@@ -217,6 +248,7 @@ def load_config(path: str) -> Config:
         fetch_interval=raw.get("fetch_interval", Config.fetch_interval),
         greeting_text=raw.get("greeting_text", Config.greeting_text),
         autostart=autostart,
+        quiet_hours=quiet_hours,
         colors=colors,
         transit=transit,
         airplay=airplay,

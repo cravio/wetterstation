@@ -43,6 +43,8 @@ class DisplayEvent(Enum):
     AIRPLAY_START = auto()    # AirPlay stream became active
     AIRPLAY_STOP = auto()     # AirPlay stream ended
     TOGGLE_VIZ = auto()       # Manually show/hide the visualizer (button Y)
+    QUIET_ON = auto()         # Enter night mode (display dark, no autostart)
+    QUIET_OFF = auto()        # Leave night mode
 
 
 class StateMachine:
@@ -60,6 +62,7 @@ class StateMachine:
         self._airplay_active = False
         self._viz_suppressed = False
         self._viz_manual = False
+        self._quiet_mode = False
         self._interrupt_event = interrupt  # threading.Event to abort animations
         self._event_queue: queue.Queue[tuple[DisplayEvent, dict[str, Any]]] = (
             queue.Queue()
@@ -98,6 +101,10 @@ class StateMachine:
         """Whether the audio analyzer should run (stream active or manual)."""
         return self._airplay_active or self._viz_manual
 
+    @property
+    def quiet_mode(self) -> bool:
+        return self._quiet_mode
+
     def clear_interrupted(self) -> None:
         """Clear the interrupted flag (call from main thread after handling)."""
         self._interrupted = False
@@ -117,6 +124,7 @@ class StateMachine:
         DisplayEvent.AUTOSTART,
         DisplayEvent.AIRPLAY_STOP,
         DisplayEvent.TOGGLE_VIZ,
+        DisplayEvent.QUIET_ON,
     })
 
     def send_event(self, event: DisplayEvent, **kwargs: Any) -> None:
@@ -227,10 +235,14 @@ class StateMachine:
             log.info("→ %s (Fahrplan fertig)", self._state.name)
 
         elif event == DisplayEvent.AUTOSTART:
-            self._state = DisplayState.RUNNING
-            self._cycles_remaining = kwargs.get("cycles", 10)
-            self._set_interrupted()
-            log.info("→ RUNNING (%s Zyklen, Autostart)", self._cycles_remaining)
+            if self._quiet_mode:
+                log.info("Autostart unterdrückt (Nachtruhe)")
+            else:
+                self._state = DisplayState.RUNNING
+                self._cycles_remaining = kwargs.get("cycles", 10)
+                self._set_interrupted()
+                log.info("→ RUNNING (%s Zyklen, Autostart)",
+                         self._cycles_remaining)
 
         elif event == DisplayEvent.AIRPLAY_START:
             self._airplay_active = True
@@ -252,6 +264,20 @@ class StateMachine:
                 log.info("→ IDLE (AirPlay beendet)")
             else:
                 log.info("AirPlay beendet")
+
+        elif event == DisplayEvent.QUIET_ON:
+            self._quiet_mode = True
+            # Turn any weather-type display dark; never kill the music viz.
+            if self._state not in (DisplayState.IDLE, DisplayState.AUDIO_VIZ):
+                self._state = DisplayState.IDLE
+                self._cycles_remaining = 0
+                self._set_interrupted()
+                self._needs_clear = True
+            log.info("→ Nachtruhe aktiv (%s)", self._state.name)
+
+        elif event == DisplayEvent.QUIET_OFF:
+            self._quiet_mode = False
+            log.info("Nachtruhe beendet")
 
         elif event == DisplayEvent.TOGGLE_VIZ:
             if self._state == DisplayState.AUDIO_VIZ:

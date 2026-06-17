@@ -17,6 +17,11 @@
     "hour": 7,
     "minute": 0
   },
+  "quiet_hours": {
+    "enabled": false,
+    "start": 0,
+    "end": 6
+  },
   "airplay": {
     "enabled": false,
     "flag_file": "/run/shairport-sync/active",

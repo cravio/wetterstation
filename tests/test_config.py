@@ -2,7 +2,7 @@
 
 import json
 import pytest
-from wetterstation.config import Config, load_config
+from wetterstation.config import Config, load_config, in_quiet_hours
 
 
 class TestLoadConfig:
@@ -141,6 +141,44 @@ class TestTransitConfig:
         f.write_text(json.dumps({"transit": {"stations": []}}))
         cfg = load_config(str(f))
         assert cfg.transit is None
+
+
+class TestQuietHours:
+    """Test quiet-hours config + window helper."""
+
+    def test_default_disabled(self):
+        cfg = Config()
+        assert cfg.quiet_hours.enabled is False
+        assert cfg.quiet_hours.start == 0
+        assert cfg.quiet_hours.end == 6
+
+    def test_loads_from_sample(self, config_file):
+        cfg = load_config(config_file)
+        assert cfg.quiet_hours.enabled is True
+        assert cfg.quiet_hours.start == 0
+        assert cfg.quiet_hours.end == 6
+
+    def test_window_simple(self):
+        # 0..6: quiet at 0-5, awake at 6+
+        assert in_quiet_hours(0, 0, 6) is True
+        assert in_quiet_hours(3, 0, 6) is True
+        assert in_quiet_hours(5, 0, 6) is True
+        assert in_quiet_hours(6, 0, 6) is False
+        assert in_quiet_hours(12, 0, 6) is False
+        assert in_quiet_hours(23, 0, 6) is False
+
+    def test_window_wraps_midnight(self):
+        # 22..6: quiet late evening through early morning
+        assert in_quiet_hours(22, 22, 6) is True
+        assert in_quiet_hours(23, 22, 6) is True
+        assert in_quiet_hours(0, 22, 6) is True
+        assert in_quiet_hours(5, 22, 6) is True
+        assert in_quiet_hours(6, 22, 6) is False
+        assert in_quiet_hours(12, 22, 6) is False
+        assert in_quiet_hours(21, 22, 6) is False
+
+    def test_window_disabled_when_equal(self):
+        assert in_quiet_hours(3, 0, 0) is False
 
 
 class TestAirplayConfig:
