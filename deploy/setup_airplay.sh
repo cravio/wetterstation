@@ -19,7 +19,7 @@ DEPLOY_DIR="$(cd "$(dirname "$0")" && pwd)"
 echo "=== AirPlay-Setup: $DEVICE_NAME ==="
 
 # --- Build-Dependencies ---
-echo "[1/7] Build-Dependencies installieren..."
+echo "[1/8] Build-Dependencies installieren..."
 sudo apt-get update
 sudo apt-get install -y \
   build-essential git autoconf automake libtool \
@@ -31,7 +31,7 @@ sudo apt-get install -y \
   python3-numpy python3-alsaaudio
 
 # --- NQPTP (AirPlay-2-Timing) ---
-echo "[2/7] NQPTP bauen..."
+echo "[2/8] NQPTP bauen..."
 cd /tmp
 rm -rf nqptp
 git clone https://github.com/mikebrady/nqptp.git
@@ -44,7 +44,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now nqptp
 
 # --- Shairport-sync (AirPlay 2) ---
-echo "[3/7] shairport-sync bauen (dauert auf dem Zero 2 W 30-60 Min)..."
+echo "[3/8] shairport-sync bauen (dauert auf dem Zero 2 W 30-60 Min)..."
 cd /tmp
 rm -rf shairport-sync
 git clone https://github.com/mikebrady/shairport-sync.git
@@ -58,7 +58,7 @@ sudo make install
 sudo useradd -r -s /usr/sbin/nologin -G audio shairport-sync 2>/dev/null || true
 
 # --- ALSA: Loopback + USB-DAC ---
-echo "[4/7] ALSA konfigurieren..."
+echo "[4/8] ALSA konfigurieren..."
 sudo install -m 644 "$DEPLOY_DIR/snd-aloop-modules-load.conf" /etc/modules-load.d/snd-aloop.conf
 sudo install -m 644 "$DEPLOY_DIR/snd-aloop-modprobe.conf" /etc/modprobe.d/snd-aloop.conf
 sudo modprobe snd-aloop index=7 pcm_substreams=1 || true
@@ -77,7 +77,7 @@ fi
 sed "s/@DAC_CARD@/$DAC_CARD/g" "$DEPLOY_DIR/asound.conf" | sudo tee /etc/asound.conf > /dev/null
 
 # --- Hooks + shairport-Konfiguration ---
-echo "[5/7] shairport-sync konfigurieren..."
+echo "[5/8] shairport-sync konfigurieren..."
 sudo install -m 755 "$DEPLOY_DIR/airplay-active.sh" /usr/local/bin/airplay-active.sh
 sed "s/wohnzimmer airplay/$DEVICE_NAME/" "$DEPLOY_DIR/shairport-sync.conf" | sudo tee /etc/shairport-sync.conf > /dev/null
 
@@ -89,8 +89,18 @@ sudo install -m 644 "$DEPLOY_DIR/shairport-sync-wetterstation.conf" \
 sudo systemctl daemon-reload
 sudo systemctl enable --now shairport-sync
 
+# --- Persistentes Journal (sonst ist jede Absturzdiagnose blind) ---
+echo "[6/8] Journal persistent machen..."
+sudo mkdir -p /etc/systemd/journald.conf.d
+sudo install -m 644 "$DEPLOY_DIR/journald-persistent.conf" \
+  /etc/systemd/journald.conf.d/50-persistent.conf
+sudo mkdir -p /var/log/journal
+sudo systemd-tmpfiles --create --prefix /var/log/journal
+sudo systemctl restart systemd-journald
+echo "Journal-Storage: $(journalctl --header 2>/dev/null | grep -m1 'File path')"
+
 # --- wetterstation: audio-Gruppe fuer Loopback-Capture ---
-echo "[6/7] wetterstation.service anpassen..."
+echo "[7/8] wetterstation.service anpassen..."
 if [ -f /etc/systemd/system/wetterstation.service ]; then
   if ! grep -q "SupplementaryGroups=audio" /etc/systemd/system/wetterstation.service; then
     sudo sed -i '/^\[Service\]/a SupplementaryGroups=audio' /etc/systemd/system/wetterstation.service
@@ -103,7 +113,7 @@ else
 fi
 
 # --- Verifikation ---
-echo "[7/7] Fertig. Verifikationsschritte:"
+echo "[8/8] Fertig. Verifikationsschritte:"
 echo ""
 echo "  1. Ton-Kette:      speaker-test -D airplay_out -c2 -twav -l1"
 echo "  2. Loopback-Tap:   arecord -D hw:Loopback,1,0 -f S16_LE -r 44100 -c 2 -d 3 /dev/null -vv"

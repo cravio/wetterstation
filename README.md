@@ -13,7 +13,7 @@ Zeigt Wetterdaten der [Open-Meteo API](https://open-meteo.com/) als Icons und Sc
 - **Fernsteuerung per SSH** über Named Pipe (FIFO)
 - **Simulator-Modus** für Entwicklung ohne Hardware
 - **AirPlay-2-Receiver** ("wohnzimmer airplay") mit Echtzeit-Spektrum-Visualizer
-- **209 Unit-Tests** mit pytest
+- **233 Unit-Tests** mit pytest
 
 ## Hardware
 
@@ -234,6 +234,74 @@ journalctl -u wetterstation -f                                          # → AU
 - **Mixer (Hardware-Volume):** `amixer -c <karte>` — falls vorhanden, `mixer_control_name` in `/etc/shairport-sync.conf` ergänzen
 - **Loopback fehlt:** `lsmod | grep aloop`, ggf. `sudo modprobe snd-aloop index=7`
 - **Permission denied beim Capture:** wetterstation-User braucht die `audio`-Gruppe (`SupplementaryGroups=audio` im Service)
+- **Logflut / `log_verbosity`:** In Produktion gehört `diagnostics.log_verbosity` auf `0`.
+  Bei `2` schreibt shairport-sync während der Wiedergabe pro Periode eine
+  `alsa: underrun`-Zeile (gemessen ~83/s). Das flutet das Journal und verdrängt
+  alle anderen Logs binnen Minuten.
+
+### Offen: ALSA-Underruns
+
+Bei `log_verbosity = 2` zeigen sich während der Wiedergabe massenhaft
+`alsa: underrun while writing N samples`. Ungeklärt ist, ob das ein echtes
+Tonproblem ist oder nur Debug-Rauschen. Zwei Kandidaten:
+
+1. **Zwei Taktdomänen im `multi`-Plugin** — `/etc/asound.conf` koppelt den
+   USB-DAC und `snd-aloop` als Slaves. ALSA's `multi` setzt sample-synchrone
+   Slaves voraus. Dagegen spricht, dass der DAC-Endpoint `ADAPTIVE` ist
+   (`cat /proc/asound/card0/stream0`) und sich dem Host-Takt anpasst.
+2. **Der Visualizer-Capture bremst die Loopback-Wiedergabe** — solange
+   wetterstation `hw:Loopback,1,0` offen hält, hängt der Abfluss der
+   Loopback-Playback-Seite an dessen Lesetempo.
+
+Der entscheidende Test trennt beides sauber, weil er nur eine Variable ändert:
+
+```bash
+# Musik starten, dann Underruns MIT laufendem Visualizer zaehlen
+journalctl -u shairport-sync -f | grep -c underrun     # ~30 s laufen lassen
+
+# Visualizer weg, Audiopfad unveraendert
+sudo systemctl stop wetterstation
+journalctl -u shairport-sync -f | grep -c underrun     # nochmal ~30 s
+
+sudo systemctl start wetterstation
+```
+
+Bleiben die Underruns ohne wetterstation bestehen → Kandidat 1, die Topologie
+muss umgebaut werden (`alsaloop` als driftausgleichende Brücke, `dsnoop` für
+mehrere Leser). Verschwinden sie → Kandidat 2, dann reicht mehr Puffer bzw.
+ein schnellerer Lesepfad im Visualizer.
+
+## Absturzdiagnose
+
+Der Pi hat eine Historie harter Resets. Reihenfolge beim Nachsehen:
+
+```bash
+# 1. Reset-Ursache des letzten Boots (PM_RSTS des SoC)
+xxd -p /proc/device-tree/chosen/bootloader/rsts
+#    0x20   = warmer reboot
+#    0x1020 = shutdown -r
+#    0x1000 = STROMAUSFALL (Bit 12 HADPOR), kein Software-Reset
+
+# 2. Unterspannung/Throttling seit dem Boot
+vcgencmd get_throttled          # 0x0 = sauber; Bit 16 = war unterspannt
+
+# 3. Jeden Reboot-Zeitpunkt auflisten
+grep "Booting Linux on physical CPU" /var/log/kmsg-watch.log
+```
+
+Ein `orphan cleanup` bei **jedem** Boot (`grep "EXT4-fs" /var/log/kmsg-watch.log`)
+bedeutet: nie sauber heruntergefahren.
+
+Zwei Dauerlogger überleben Reboots und ergänzen das Journal:
+`/var/log/crashwatch.log` (alle 10 s throttled/temp/mem/load) und
+`/var/log/kmsg-watch.log` (`dmesg --follow`). Die Auswertung nicht auf dem Pi
+rechnen — die Logs per `ssh pi 'gzip -9c /var/log/crashwatch.log'` holen und
+lokal analysieren.
+
+**Wichtig:** Ohne `deploy/journald-persistent.conf` kennt `journalctl` immer nur
+den aktuellen Boot, weil Raspberry Pi OS mit
+`/usr/lib/systemd/journald.conf.d/40-rpi-volatile-storage.conf` ein
+`Storage=volatile` erzwingt, das die Hauptconfig überstimmt.
 
 ## Architektur
 
