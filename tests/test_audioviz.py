@@ -322,3 +322,53 @@ class TestAudioAnalyzer:
             assert analyzer.bands == [0.0] * 17
         finally:
             analyzer.stop()
+
+    def test_restart_reuses_a_single_thread(self):
+        """start/stop cycles must not accumulate analyzer threads."""
+        cfg = AirplayConfig()
+        analyzer = AudioAnalyzer(
+            cfg, source_factory=lambda: SyntheticSource(freq=440.0)
+        )
+        before = threading.active_count()
+        for _ in range(5):
+            analyzer.start()
+            time.sleep(0.05)
+            analyzer.stop()
+            assert analyzer._thread is None, "stop() left a thread behind"
+        assert threading.active_count() <= before, "threads accumulated"
+
+    def test_stop_timeout_keeps_thread_reference(self):
+        """A stop() that times out must not orphan the running thread.
+
+        Dropping the reference would let the next start() open a second
+        analyzer on the same ALSA device. Uses a stub instead of a real
+        thread: a real one may exit before the assertion runs, which makes
+        the timeout impossible to observe reliably.
+        """
+        class StuckThread:
+            """Never finishes joining — models a wedged capture read."""
+
+            def __init__(self) -> None:
+                self.join_calls = 0
+
+            def join(self, timeout=None) -> None:
+                self.join_calls += 1
+
+            def is_alive(self) -> bool:
+                return True
+
+        cfg = AirplayConfig()
+        analyzer = AudioAnalyzer(
+            cfg, source_factory=lambda: SyntheticSource(freq=440.0)
+        )
+        stuck = StuckThread()
+        analyzer._thread = stuck
+
+        analyzer.stop()
+        assert stuck.join_calls == 1
+        assert analyzer._thread is stuck, "reference to a live thread dropped"
+        assert analyzer.bands == [0.0] * 17
+
+        # start() must refuse while that thread still owns the device.
+        analyzer.start()
+        assert analyzer._thread is stuck, "a second analyzer was started"

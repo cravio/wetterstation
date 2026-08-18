@@ -294,6 +294,10 @@ class AudioAnalyzer:
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
+            # A previous stop() timed out and that thread still owns the
+            # capture device. Starting a second one would open the same
+            # ALSA device twice, so stay out until the old one is gone.
+            log.warning("Audio-Analyzer läuft noch – Start übersprungen")
             return
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -303,7 +307,16 @@ class AudioAnalyzer:
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=2.0)
-            self._thread = None
+            if self._thread.is_alive():
+                # Keep the reference: it is what start() checks to avoid
+                # a second analyzer on the same device. The thread is a
+                # daemon and still observes _stop, so it exits on its own.
+                log.warning(
+                    "Audio-Analyzer reagiert nicht auf stop() – Visualizer "
+                    "bleibt aus, bis der Thread beendet ist"
+                )
+            else:
+                self._thread = None
         with self._lock:
             self._bands = [0.0] * self._n_bands
 
